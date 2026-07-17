@@ -10,6 +10,8 @@
     "build": "vinext build",
     "start": "vinext start",
     "test": "pnpm run build && node --test tests/rendered-html.test.mjs",
+    "security:check": "node --test tests/rendered-html.test.mjs",
+    "check": "pnpm run lint && pnpm exec tsc --noEmit && pnpm test",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern work",
     "db:generate": "drizzle-kit generate"
   },

@@ -10,4 +10,5 @@ export function getDb() {
     );
   }
 
-  return drizzle(runtimeEnv.DB, { sche
+  return drizzle(runtimeEnv.DB, { schema });
+}

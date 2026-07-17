@@ -1,4 +1,4 @@
-import { actorFromRequest, audit, ensureDatabase, ensureUser, getD1, hasPartnerRole, type PartnerRole, validateMutationRequest } from "../../../db/runtime";
+import { actorFromRequest, audit, enforceMutationRateLimit, ensureDatabase, ensureUser, getD1, hasPartnerRole, type PartnerRole, validateMutationRequest } from "../../../db/runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -53,8 +53,9 @@ type OrderRow = Record<string, unknown> & { id: string };
 type OrderItemRow = Record<string, unknown> & { order_id: string };
 
 const PRIVATE_HEADERS = { "Cache-Control": "private, no-store, max-age=0", "Vary": "oai-authenticated-user-email" };
-const safeText = (value: unknown, max = 300) => typeof value === "string" ? value.trim().slice(0, max) : "";
-const jsonError = (message: string, status = 400) => Response.json({ error: message }, { status, headers: PRIVATE_HEADERS });
+const UNSAFE_TEXT_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g;
+const safeText = (value: unknown, max = 300) => typeof value === "string" ? Array.from(value.normalize("NFC").replace(UNSAFE_TEXT_CHARACTERS, " ").trim()).slice(0, max).join("") : "";
+const jsonError = (message: string, status = 400, extraHeaders: Record<string, string> = {}) => Response.json({ error: message }, { status, headers: { ...PRIVATE_HEADERS, ...extraHeaders } });
 const validDate = (value: string) => Boolean(value) && !Number.isNaN(Date.parse(value));
 const validPhone = (value: string) => /^[0-9+().\s-]{7,30}$/.test(value);
 const validCoordinates = (latitude: number, longitude: number) => Number.isFinite(latitude) && latitude >= -90 && latitude <= 90 && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180;
@@ -83,9 +84,9 @@ async function loadData(request: Request) {
     db.prepare(`SELECT v.* FROM vaccinations v JOIN pets p ON p.id = v.pet_id WHERE p.owner_email = ? ORDER BY v.administered_at DESC`).bind(email).all(),
     db.prepare(`SELECT m.*, pr.name AS partner_name FROM medical_records m JOIN pets p ON p.id = m.pet_id JOIN partners pr ON pr.id = m.partner_id WHERE p.owner_email = ? ORDER BY m.visited_at DESC`).bind(email).all(),
     actor ? db.prepare(`SELECT pu.partner_id, pu.role, p.name FROM partner_users pu JOIN partners p ON p.id = pu.partner_id WHERE pu.email = ? ORDER BY p.name`).bind(email).all() : Promise.resolve({ results: [] }),
-    actor ? db.prepare(`SELECT a.*, p.name AS pet_name, p.avatar AS pet_avatar, p.breed AS pet_breed, pr.name AS partner_name FROM appointments a JOIN pets p ON p.id = a.pet_id JOIN partners pr ON pr.id = a.partner_id WHERE a.partner_id IN (SELECT partner_id FROM partner_users WHERE email = ?) ORDER BY a.scheduled_at ASC`).bind(email).all() : Promise.resolve({ results: [] }),
+    actor ? db.prepare(`SELECT a.id,a.pet_id,a.partner_id,a.scheduled_at,a.reason,a.note,a.status,a.created_at,a.updated_at,CASE WHEN access.role = 'staff' THEN 'Ẩn theo quyền staff' ELSE a.owner_email END AS owner_email,p.name AS pet_name,p.avatar AS pet_avatar,p.breed AS pet_breed,pr.name AS partner_name FROM appointments a JOIN pets p ON p.id = a.pet_id JOIN partners pr ON pr.id = a.partner_id JOIN partner_users access ON access.partner_id = a.partner_id AND access.email = ? ORDER BY a.scheduled_at ASC`).bind(email).all() : Promise.resolve({ results: [] }),
     actor ? db.prepare(`SELECT * FROM products WHERE partner_id IN (SELECT partner_id FROM partner_users WHERE email = ? AND role IN ('owner','manager')) ORDER BY updated_at DESC`).bind(email).all() : Promise.resolve({ results: [] }),
-    actor ? db.prepare(`SELECT DISTINCT p.* FROM pets p JOIN appointments a ON a.pet_id = p.id WHERE a.partner_id IN (SELECT partner_id FROM partner_users WHERE email = ? AND role IN ('owner','clinician')) ORDER BY p.updated_at DESC`).bind(email).all() : Promise.resolve({ results: [] }),
+    actor ? db.prepare(`SELECT DISTINCT p.id,p.name,p.species,p.breed,p.sex,p.date_of_birth,p.weight_kg,p.blood_type,p.microchip,p.allergies,p.avatar,p.updated_at FROM pets p JOIN appointments a ON a.pet_id = p.id JOIN partner_users access ON access.partner_id = a.partner_id AND access.email = ? AND access.role IN ('owner','clinician') ORDER BY p.updated_at DESC`).bind(email).all() : Promise.resolve({ results: [] }),
     db.prepare(`SELECT o.*, p.name AS partner_name FROM orders o JOIN partners p ON p.id = o.partner_id WHERE o.owner_email = ? ORDER BY o.created_at DESC LIMIT 30`).bind(email).all(),
     db.prepare(`SELECT oi.* FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.owner_email = ? ORDER BY oi.id`).bind(email).all(),
     actor ? db.prepare(`SELECT o.*, p.name AS partner_name FROM orders o JOIN partners p ON p.id = o.partner_id WHERE o.partner_id IN (SELECT partner_id FROM partner_users WHERE email = ? AND role IN ('owner','manager')) ORDER BY o.created_at DESC LIMIT 100`).bind(email).all() : Promise.resolve({ results: [] }),
@@ -155,6 +156,11 @@ export async function POST(request: Request) {
     const db = getD1();
     await ensureDatabase(db);
     await ensureUser(db, actor);
+    const action = safeText(payload.action, 64);
+    const rateLimit = await enforceMutationRateLimit(db, actor.email, action);
+    if (!rateLimit.supported) return jsonError("Thao tác không được hỗ trợ.", 404);
+    if (!rateLimit.allowed) return jsonError("Bạn thao tác quá nhanh. Vui lòng thử lại sau.", 429, { "Retry-After": String(rateLimit.retryAfterSeconds) });
+    payload.action = action;
     const now = new Date().toISOString();
 
     if (payload.action === "registerPartner") {
@@ -184,11 +190,14 @@ export async function POST(request: Request) {
       const reason = safeText(payload.reason, 160);
       const scheduledAt = safeText(payload.scheduledAt, 64);
       if (!petId || !partnerId || !reason || !scheduledAt) return jsonError("Thiếu thông tin đặt lịch.");
-      if (!validDate(scheduledAt) || Date.parse(scheduledAt) < Date.now() - 60_000) return jsonError("Thời gian khám không hợp lệ.");
+      const scheduledTime = Date.parse(scheduledAt);
+      if (!validDate(scheduledAt) || scheduledTime < Date.now() - 60_000 || scheduledTime > Date.now() + 366 * 24 * 60 * 60 * 1000) return jsonError("Thời gian khám không hợp lệ.");
       const ownedPet = await db.prepare(`SELECT id FROM pets WHERE id = ? AND owner_email = ?`).bind(petId, actor.email).first();
       const partner = await db.prepare(`SELECT id FROM partners WHERE id = ? AND verified = 1 AND type IN ('vet','both') AND accepting_appointments = 1`).bind(partnerId).first();
       if (!ownedPet) return jsonError("Bạn không có quyền đặt lịch cho hồ sơ này.", 403);
       if (!partner) return jsonError("Cơ sở này hiện chưa nhận lịch.", 409);
+      const duplicate = await db.prepare(`SELECT id FROM appointments WHERE owner_email = ? AND pet_id = ? AND partner_id = ? AND scheduled_at = ? AND status IN ('pending','confirmed') LIMIT 1`).bind(actor.email, petId, partnerId, scheduledAt).first();
+      if (duplicate) return jsonError("Lịch khám này đã được gửi trước đó.", 409);
       const id = `appt-${crypto.randomUUID()}`;
       await db.prepare(`INSERT INTO appointments (id,owner_email,pet_id,partner_id,scheduled_at,reason,note,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).bind(id, actor.email, petId, partnerId, scheduledAt, reason, safeText(payload.note, 500), "pending", now, now).run();
       await audit(db, actor.email, "appointment.create", "appointment", id);
@@ -202,37 +211,13 @@ export async function POST(request: Request) {
       const microchip = safeText(payload.microchip, 80) || null;
       const avatar = pet.species.toLowerCase().includes("mèo") ? "🐱" : pet.species.toLowerCase().includes("chó") ? "🐶" : "🐾";
       if (payload.action === "createPet") {
+        const existingPets = await db.prepare(`SELECT COUNT(*) AS count FROM pets WHERE owner_email = ?`).bind(actor.email).first<{ count: number }>();
+        if (Number(existingPets?.count ?? 0) >= 25) return jsonError("Một tài khoản chỉ được tạo tối đa 25 hồ sơ pet.", 409);
         const id = `pet-${crypto.randomUUID()}`;
-        await db.prepare(`INSERT INTO pets (id,owner_email,name,species,breed,sex,date_of_birth,weight_kg,blood_type,microchip,allergies,notes,avatar,qr_token,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id, actor.email, pet.name, pet.species, pet.breed, pet.sex, pet.dateOfBirth, pet.weightKg, bloodType, microchip, safeText(payload.allergies, 300), safeText(payload.petNotes, 500), avatar, `petcare-${crypto.randomUUID()}`, now, now).run();
-        await audit(db, actor.email, "pet.create", "pet", id);
-        return Response.json({ ok: true, id }, { status: 201, headers: PRIVATE_HEADERS });
-      }
-      const petId = safeText(payload.petId, 100);
-      const owned = await db.prepare(`SELECT id FROM pets WHERE id = ? AND owner_email = ?`).bind(petId, actor.email).first();
-      if (!owned) return jsonError("Bạn không có quyền sửa hồ sơ này.", 403);
-      await db.prepare(`UPDATE pets SET name=?,species=?,breed=?,sex=?,date_of_birth=?,weight_kg=?,blood_type=?,microchip=?,allergies=?,notes=?,avatar=?,updated_at=? WHERE id=? AND owner_email=?`).bind(pet.name, pet.species, pet.breed, pet.sex, pet.dateOfBirth, pet.weightKg, bloodType, microchip, safeText(payload.allergies, 300), safeText(payload.petNotes, 500), avatar, now, petId, actor.email).run();
-      await audit(db, actor.email, "pet.update", "pet", petId);
-      return Response.json({ ok: true }, { headers: PRIVATE_HEADERS });
-    }
-
-    if (payload.action === "rotatePetQr") {
-      const petId = safeText(payload.petId, 100);
-      const owned = await db.prepare(`SELECT id FROM pets WHERE id = ? AND owner_email = ?`).bind(petId, actor.email).first();
-      if (!owned) return jsonError("Bạn không có quyền cấp lại QR này.", 403);
-      const token = `petcare-${crypto.randomUUID()}`;
-      await db.prepare(`UPDATE pets SET qr_token = ?, updated_at = ? WHERE id = ? AND owner_email = ?`).bind(token, now, petId, actor.email).run();
-      await audit(db, actor.email, "pet.qr.rotate", "pet", petId);
-      return Response.json({ ok: true, qrToken: token }, { headers: PRIVATE_HEADERS });
-    }
-
-    if (payload.action === "updateAppointmentStatus") {
-      const appointmentId = safeText(payload.appointmentId, 100);
-      const status = safeText(payload.status, 20);
-      const appointment = await db.prepare(`SELECT partner_id,status FROM appointments WHERE id = ?`).bind(appointmentId).first<{ partner_id: string; status: string }>();
-      if (!appointment || !(await requireRole(db, actor.email, appointment.partner_id, ["owner", "manager", "staff"]))) return jsonError("Bạn không có quyền duyệt lịch này.", 403);
-      const allowed = appointment.status === "pending" ? ["confirmed", "cancelled"] : appointment.status === "confirmed" ? ["cancelled"] : [];
+        await db.prepare(`INSERT INTO pets (id,owner_email,name,species,breed,sex,date_of_birth,weight_kg,blood_type,microchip,allergies,notes,avatar,qr_token,created_at,updated_at) VALUES (?,?,?,?,?�m�G����ƭy�pointment.status === "confirmed" ? ["cancelled"] : [];
       if (!allowed.includes(status)) return jsonError("Chuyển trạng thái lịch không hợp lệ.", 409);
-      await db.prepare(`UPDATE appointments SET status = ?, updated_at = ? WHERE id = ?`).bind(status, now, appointmentId).run();
+      const updated = await db.prepare(`UPDATE appointments SET status = ?, updated_at = ? WHERE id = ? AND status = ?`).bind(status, now, appointmentId, appointment.status).run();
+      if (Number(updated.meta.changes ?? 0) !== 1) return jsonError("Lịch vừa được cập nhật ở phiên khác. Vui lòng tải lại.", 409);
       await audit(db, actor.email, `appointment.${status}`, "appointment", appointmentId);
       return Response.json({ ok: true }, { headers: PRIVATE_HEADERS });
     }
@@ -303,6 +288,8 @@ export async function POST(request: Request) {
     if (payload.action === "createProduct") {
       const partnerId = safeText(payload.partnerId, 80);
       if (!(await requireRole(db, actor.email, partnerId, ["owner", "manager"]))) return jsonError("Bạn không có quyền đăng sản phẩm cho cơ sở này.", 403);
+      const existingProducts = await db.prepare(`SELECT COUNT(*) AS count FROM products WHERE partner_id = ?`).bind(partnerId).first<{ count: number }>();
+      if (Number(existingProducts?.count ?? 0) >= 1_000) return jsonError("Cơ sở đã đạt giới hạn 1.000 sản phẩm.", 409);
       const name = safeText(payload.name, 160);
       const category = safeText(payload.category, 80);
       const description = safeText(payload.description, 500);
@@ -336,7 +323,7 @@ export async function POST(request: Request) {
       const total = lines.reduce((sum, line) => sum + line.total, 0);
       if (!Number.isSafeInteger(total) || total <= 0 || total > 200_000_000) return jsonError("Tổng đơn hàng không hợp lệ.");
       const id = `order-${crypto.randomUUID()}`;
-      const orderCode = `PAW${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
+      const orderCode = `PET${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
       await db.batch([
         db.prepare(`INSERT INTO orders (id,order_code,owner_email,partner_id,total_amount,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`).bind(id, orderCode, actor.email, partnerId, total, "pending_payment", now, now),
         ...lines.map((line) => db.prepare(`INSERT INTO order_items (id,order_id,product_id,product_name,unit_price,quantity,line_total) VALUES (?,?,?,?,?,?,?)`).bind(`item-${crypto.randomUUID()}`, id, line.id, line.name, line.price, line.quantity, line.total)),
@@ -350,7 +337,8 @@ export async function POST(request: Request) {
       const order = await db.prepare(`SELECT status FROM orders WHERE id=? AND owner_email=?`).bind(orderId, actor.email).first<{ status: string }>();
       if (!order) return jsonError("Không tìm thấy đơn hàng.", 404);
       if (order.status !== "pending_payment") return jsonError("Đơn hàng không ở trạng thái chờ thanh toán.", 409);
-      await db.prepare(`UPDATE orders SET status='payment_review',updated_at=? WHERE id=? AND owner_email=?`).bind(now, orderId, actor.email).run();
+      const updated = await db.prepare(`UPDATE orders SET status='payment_review',updated_at=? WHERE id=? AND owner_email=? AND status='pending_payment'`).bind(now, orderId, actor.email).run();
+      if (Number(updated.meta.changes ?? 0) !== 1) return jsonError("Đơn hàng vừa được cập nhật ở phiên khác. Vui lòng tải lại.", 409);
       await audit(db, actor.email, "order.payment_submitted", "order", orderId);
       return Response.json({ ok: true, status: "payment_review" }, { headers: PRIVATE_HEADERS });
     }
@@ -362,16 +350,23 @@ export async function POST(request: Request) {
       if (!order || !(await requireRole(db, actor.email, order.partner_id, ["owner", "manager"]))) return jsonError("Bạn không có quyền cập nhật đơn hàng này.", 403);
       const transitions: Record<string, string[]> = { pending_payment: ["cancelled"], payment_review: ["paid", "cancelled"], paid: ["fulfilled"] };
       if (!(transitions[order.status] ?? []).includes(nextStatus)) return jsonError("Chuyển trạng thái đơn hàng không hợp lệ.", 409);
-      const statements = [db.prepare(`UPDATE orders SET status=?,updated_at=? WHERE id=? AND status=?`).bind(nextStatus, now, orderId, order.status)];
       if (nextStatus === "paid") {
         const items = await db.prepare(`SELECT product_id,quantity FROM order_items WHERE order_id=?`).bind(orderId).all<{ product_id: string; quantity: number }>();
-        for (const item of items.results) {
-          const product = await db.prepare(`SELECT stock FROM products WHERE id=?`).bind(item.product_id).first<{ stock: number }>();
-          if (!product || product.stock < item.quantity) return jsonError("Không đủ tồn kho để xác nhận thanh toán.", 409);
-          statements.push(db.prepare(`UPDATE products SET stock=stock-?,sold=sold+?,updated_at=? WHERE id=?`).bind(item.quantity, item.quantity, now, item.product_id));
+        const stockResults = await db.batch(items.results.map((item) => db.prepare(`UPDATE products SET stock=stock-?,sold=sold+?,updated_at=? WHERE id=? AND stock>=?`).bind(item.quantity, item.quantity, now, item.product_id, item.quantity)));
+        const changedItems = items.results.filter((_, index) => Number(stockResults[index]?.meta.changes ?? 0) === 1);
+        if (changedItems.length !== items.results.length) {
+          if (changedItems.length) await db.batch(changedItems.map((item) => db.prepare(`UPDATE products SET stock=stock+?,sold=CASE WHEN sold>=? THEN sold-? ELSE 0 END,updated_at=? WHERE id=?`).bind(item.quantity, item.quantity, item.quantity, now, item.product_id)));
+          return jsonError("Không đủ tồn kho để xác nhận thanh toán.", 409);
         }
+        const updatedOrder = await db.prepare(`UPDATE orders SET status='paid',updated_at=? WHERE id=? AND status='payment_review'`).bind(now, orderId).run();
+        if (Number(updatedOrder.meta.changes ?? 0) !== 1) {
+          await db.batch(items.results.map((item) => db.prepare(`UPDATE products SET stock=stock+?,sold=CASE WHEN sold>=? THEN sold-? ELSE 0 END,updated_at=? WHERE id=?`).bind(item.quantity, item.quantity, item.quantity, now, item.product_id)));
+          return jsonError("Đơn hàng vừa được cập nhật ở phiên khác. Vui lòng tải lại.", 409);
+        }
+      } else {
+        const updatedOrder = await db.prepare(`UPDATE orders SET status=?,updated_at=? WHERE id=? AND status=?`).bind(nextStatus, now, orderId, order.status).run();
+        if (Number(updatedOrder.meta.changes ?? 0) !== 1) return jsonError("Đơn hàng vừa được cập nhật ở phiên khác. Vui lòng tải lại.", 409);
       }
-      await db.batch(statements);
       await audit(db, actor.email, `order.${nextStatus}`, "order", orderId);
       return Response.json({ ok: true, status: nextStatus }, { headers: PRIVATE_HEADERS });
     }

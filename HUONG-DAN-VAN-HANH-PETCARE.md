@@ -1,6 +1,6 @@
 # HƯỚNG DẪN VẬN HÀNH & PHÁT TRIỂN PETCARE
 
-Phiên bản: 1.2 — 16/07/2026
+Phiên bản: 1.3 — 17/07/2026
 
 ## 1. Tổng quan
 
@@ -63,6 +63,8 @@ Nếu dùng GitHub connector trong Codex, sau khi tạo repo hãy cấp GitHub A
 4. Deploy version, thử đăng nhập ở cả `/` và `/partner`, rồi chạy checklist mục 11.
 5. Chỉ bật public access sau khi đã cấu hình rate limit/WAF, quy trình xác minh đối tác và giám sát log.
 
+Biến `PETCARE_SEED_DEMO=true` chỉ dùng cho bản demo. Production thật phải để `false` hoặc không cấu hình; backend sẽ không tự chèn tài khoản, pet, sản phẩm hay cơ sở mẫu.
+
 ## 3. Tài khoản và phân quyền
 
 Production lấy danh tính từ header đăng nhập đáng tin cậy của Sites:
@@ -79,7 +81,7 @@ PetCare không tự nhận, lưu hoặc xử lý mật khẩu; frontend cũng kh
 
 Các màn `Hồ sơ`, `Lịch khám`, đặt lịch và portal đối tác đều yêu cầu phiên hợp lệ. Portal còn kiểm tra role trong `partner_users` ở backend; chỉ đăng nhập thôi chưa đủ quyền quản trị.
 
-Ở local development, hệ thống tự dùng tài khoản demo `demo@pawly.vn`. Nhánh demo này không chạy khi `NODE_ENV=production`.
+Ở local development, hệ thống tự dùng tài khoản demo `demo@petcare.local`. Nhánh demo này không chạy khi `NODE_ENV=production` trừ khi chủ động đặt `PETCARE_SEED_DEMO=true`.
 
 ## 3.1. Tìm kiếm sản phẩm
 
@@ -190,7 +192,10 @@ Lưu ý: QR hiện tại vẫn chưa tự xác nhận giao dịch ngân hàng. N
 - Kiểm tra ownership của pet và role của đối tác ở backend.
 - Áp dụng least privilege cả khi đọc: dữ liệu pet đầy đủ chỉ trả cho `owner/clinician`; sản phẩm và đơn hàng chỉ trả cho `owner/manager`.
 - Kiểm tra Content-Type, giới hạn request 32 KB và same-origin cho mutations.
+- Quota theo actor/action dùng audit log; các thao tác tạo lịch, pet, đơn hàng, QR và sản phẩm có giới hạn riêng và trả `429 Retry-After` khi vượt ngưỡng.
 - Validate độ dài, kiểu dữ liệu, ngày giờ, giá và tồn kho.
+- Loại bỏ control/bidi characters trong dữ liệu hiển thị để giảm giả mạo giao diện và log.
+- Chuyển trạng thái dùng điều kiện trạng thái cũ; lịch trùng bị chặn bởi unique index và xác nhận thanh toán hoàn tác tồn kho nếu có race condition.
 - QR token dùng allowlist ký tự/độ dài trước khi query; route không ghép đường dẫn filesystem nên không tạo bề mặt path traversal.
 - Audit log cho đăng ký cơ sở, đặt/duyệt lịch, hồ sơ, QR, sản phẩm, đơn hàng và thanh toán.
 - CSP có `object-src 'none'`/`frame-src 'none'`, HSTS, `X-Content-Type-Options`, `X-Frame-Options`, Referrer Policy và Permissions Policy ở Worker.
@@ -198,6 +203,7 @@ Lưu ý: QR hiện tại vẫn chưa tự xác nhận giao dịch ngân hàng. N
 - QR công khai giới hạn dữ liệu và trang được đặt `noindex`.
 - Không có secret trong repository.
 - D1 giữ dữ liệu có cấu trúc; browser storage không phải nguồn dữ liệu chính.
+- Checklist chi tiết, mapping OWASP/CWE và snapshot CVE nằm trong `SECURITY.md`.
 
 Khi thêm chức năng mới, rà lại OWASP Top 10 hiện hành, đặc biệt quyền truy cập theo object, cấu hình sai, injection, xác thực, logging và xử lý lỗi. Không tuyên bố hệ thống “bảo mật tuyệt đối”: trước khi nhận thanh toán hoặc dữ liệu y tế thật vẫn phải scan dependency, bật WAF/rate limit và pentest độc lập.
 
@@ -226,7 +232,7 @@ Việc cần làm trước khi mở public quy mô lớn:
 
 ## 10. Thêm migration an toàn
 
-Migration `drizzle/0001_misty_giant_man.sql` thêm `orders`, `order_items` và unique index ngăn ghi hai hồ sơ y tế cho cùng một lịch. Migration này phải được Sites chạy cùng phiên bản 1.2.
+Migration `drizzle/0001_misty_giant_man.sql` thêm `orders`, `order_items` và unique index ngăn ghi hai hồ sơ y tế cho cùng một lịch. Migration `drizzle/0002_steep_echo.sql` thêm unique index chống lịch đang hoạt động bị tạo trùng và index phục vụ quota/audit. Cả ba migration phải được Sites chạy cùng phiên bản 1.3.
 
 1. Sửa `db/schema.ts`.
 2. Chạy `pnpm run db:generate`.

@@ -21,6 +21,7 @@ pnpm run dev
 pnpm run db:generate
 pnpm run build
 pnpm exec tsc --noEmit
+pnpm run security:check
 ```
 
-Xem hướng dẫn đầy đủ tại [HUONG-DAN-VAN-HANH-PETCARE.md](./HUONG-DAN-VAN-HANH-PETCARE.md).
+Xem hướng dẫn đầy đủ tại [HUONG-DAN-VAN-HANH-PETCARE.md](./HUONG-DAN-VAN-HANH-PETCARE.md) và checklist bảo mật tại [SECURITY.md](./SECURITY.md).

@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX `appointment_active_slot_unique` ON `appointments` (`owner_email`,`pet_id`,`partner_id`,`scheduled_at`) WHERE "appointments"."status" IN ('pending','confirmed');--> statement-breakpoint
+CREATE INDEX `audit_rate_idx` ON `audit_logs` (`actor_email`,`action`,`created_at`);
