@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
@@ -83,6 +84,7 @@ export const appointments = sqliteTable("appointments", {
 }, (table) => [
   index("appointment_owner_idx").on(table.ownerEmail),
   index("appointment_partner_idx").on(table.partnerId, table.scheduledAt),
+  uniqueIndex("appointment_active_slot_unique").on(table.ownerEmail, table.petId, table.partnerId, table.scheduledAt).where(sql`${table.status} IN ('pending','confirmed')`),
 ]);
 
 export const medicalRecords = sqliteTable("medical_records", {
@@ -127,7 +129,7 @@ export const auditLogs = sqliteTable("audit_logs", {
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
   createdAt: text("created_at").notNull(),
-});
+}, (table) => [index("audit_rate_idx").on(table.actorEmail, table.action, table.createdAt)]);
 
 export const orders = sqliteTable("orders", {
   id: text("id").primaryKey(),

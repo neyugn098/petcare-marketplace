@@ -15,6 +15,13 @@
       "when": 1784218213375,
       "tag": "0001_misty_giant_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784305103158,
+      "tag": "0002_steep_echo",
+      "breakpoints": true
     }
   ]
 }

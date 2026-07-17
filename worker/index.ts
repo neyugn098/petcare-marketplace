@@ -47,7 +47,15 @@ const worker = {
     headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
     headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)");
     headers.set("Cross-Origin-Opener-Policy", "same-origin");
-    headers.set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://*.tile.openstreetmap.org; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
-    if (url.pathname.startsWith("/api/") || url.pathname === "/partner") headers.set("Cache-Control", "private, no-store, max-age=0");
+    headers.set("Cross-Origin-Resource-Policy", "same-origin");
+    headers.set("Origin-Agent-Cluster", "?1");
+    headers.set("X-Permitted-Cross-Domain-Policies", "none");
+    headers.set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://*.tile.openstreetmap.org; style-src 'self' 'unsafe-inline'; style-src-attr 'unsafe-inline'; script-src 'self' 'unsafe-inline'; script-src-attr 'none'; connect-src 'self'; font-src 'self' data:; manifest-src 'self'; media-src 'none'; worker-src 'self' blob:; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
+    if (url.pathname.startsWith("/api/") || url.pathname === "/partner" || url.pathname.startsWith("/pet/")) headers.set("Cache-Control", "private, no-store, max-age=0");
+    if (url.pathname.startsWith("/pet/")) headers.set("X-Robots-Tag", "noindex, nofollow");
     if (url.protocol === "https:") headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-    return new Response(response.body, { status: response.status, statusText: response.statusText, he
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  },
+};
+
+export default worker;

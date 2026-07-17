@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatVietnamDate } from "../../format";
 
-type PublicData = { pet: { name: string; species: string; breed: string; sex: string; date_of_birth: string; weight_kg: number; blood_type: string | null; microchip: string | null; allergies: string; avatar: string; updated_at: string }; vaccinations: Array<{ vaccine_name: string; administered_at: string; next_due_at: string | null; status: string; provider_name: string }> };
+type PublicData = { pet: { name: string; species: string; breed: string; sex: string; weight_kg: number; blood_type: string | null; microchip: string | null; allergies: string; avatar: string; updated_at: string }; vaccinations: Array<{ vaccine_name: string; administered_at: string; next_due_at: string | null; status: string; provider_name: string }> };
 
 export default function PublicPetCard({ token }: { token: string }) {
   const [data, setData] = useState<PublicData | null>(null);
