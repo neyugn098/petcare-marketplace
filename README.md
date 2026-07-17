@@ -1,21 +1,21 @@
 # PetCare
 
-Ná»n táº£ng full-stack chÄƒm sÃ³c thÃº cÆ°ng gá»“m marketplace cho khÃ¡ch hÃ ng vÃ  portal váº­n hÃ nh cho thÃº y/pet shop.
+Nền tảng full-stack chăm sóc thú cưng gồm marketplace cho khách hàng và portal vận hành cho thú y/pet shop.
 
-## CÃ¡c app
+## Các app
 
-- `/` â€” mua sáº¯m, báº£n Ä‘á»“ thÃº y/pet shop, nhiá»u há»“ sÆ¡ pet, QR vÃ  lá»‹ch khÃ¡m.
-- `/partner` â€” tráº¡ng thÃ¡i má»Ÿ cá»­a, duyá»‡t lá»‹ch, cáº­p nháº­t há»“ sÆ¡/tiÃªm phÃ²ng vÃ  sáº£n pháº©m.
-- `/pet/[token]` â€” tháº» QR an toÃ n cá»§a pet.
+- `/` — mua sắm, bản đồ thú y/pet shop, nhiều hồ sơ pet, QR và lịch khám.
+- `/partner` — trạng thái mở cửa, duyệt lịch, cập nhật hồ sơ/tiêm phòng và sản phẩm.
+- `/pet/[token]` — thẻ QR an toàn của pet.
 
-## Cháº¡y local
+## Chạy local
 
 ```bash
 pnpm install
 pnpm run dev
 ```
 
-## Kiá»ƒm tra
+## Kiểm tra
 
 ```bash
 pnpm run db:generate
@@ -23,4 +23,4 @@ pnpm run build
 pnpm exec tsc --noEmit
 ```
 
-Xem hÆ°á»›ng dáº«n Ä‘áº§y Ä‘á»§ táº¡i [HUONG-DAN-VAN-HANH-PETCARE.md](./HUONG-DAN-VAN-HANH-PETCARE.md).
+Xem hướng dẫn đầy đủ tại [HUONG-DAN-VAN-HANH-PETCARE.md](./HUONG-DAN-VAN-HANH-PETCARE.md).
