@@ -25,7 +25,7 @@ Chỉ xem là đã cập nhật khi deployment READY và production alias trỏ 
 Tài khoản Vercel chủ project cần kết nối GitHub tại Account Settings > Authentication.
 Trong project petcare, Settings > Git, kết nối neyugn098/petcare-marketplace; Production Branch là main.
 Nếu Vercel yêu cầu quyền GitHub App, cấp quyền cho đúng repo này.
-Ngày 16/10/2026: lệnh kết nối đang chờ chủ tài khoản thêm GitHub Login Connection; chưa xác nhận tự deploy hoạt động.
+Ngày 17/10/2026: code đã đồng bộ lên GitHub và Login Connection đã kết nối. Còn cần cài GitHub App Vercel cho repo petcare-marketplace, sau đó kết nối project và xác nhận một lần tự deploy thành công.
 
 ## Database và cấu hình
 
