@@ -6,44 +6,50 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vinext dev",
-    "build": "vinext build",
-    "start": "vinext start",
-    "test": "pnpm run build && node --test tests/rendered-html.test.mjs",
-    "security:check": "node --test tests/rendered-html.test.mjs",
-    "check": "pnpm run lint && pnpm exec tsc --noEmit && pnpm test",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern work",
-    "db:generate": "drizzle-kit generate"
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "node scripts/start.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose stop db",
+    "db:import-json": "tsx scripts/import-json.ts",
+    "test:smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.117.2",
+    "dotenv": "^17.2.3",
     "drizzle-orm": "0.45.2",
     "leaflet": "1.9.4",
     "next": "16.2.6",
+    "pg": "^8.16.3",
     "qrcode": "1.5.4",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "react-leaflet": "5.0.0"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.37.1",
-    "@cloudflare/workers-types": "^5.20260713.1",
+    "@electric-sql/pglite": "^0.3.14",
     "@tailwindcss/postcss": "4.2.1",
     "@types/leaflet": "1.9.21",
     "@types/node": "22.19.19",
+    "@types/pg": "^8.15.5",
     "@types/qrcode": "1.5.6",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
-    "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",
-    "typescript": "5.9.3",
-    "vinext": "0.0.50",
-    "vite": "8.0.13",
-    "wrangler": "4.92.0"
+    "tsx": "^4.20.6",
+    "typescript": "5.9.3"
   },
-  "type": "module"
+  "type": "module",
+  "packageManager": "pnpm@11.19.0"
 }

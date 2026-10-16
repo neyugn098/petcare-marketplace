@@ -1,6 +1,7 @@
 export type Product = {
   id: string; partner_id: string; name: string; category: string; price: number;
   original_price: number | null; visual: string; visual_tone: string; rating: number;
+  is_sample?: boolean; image_url?: string; source_url?: string; price_checked_at?: string; partner_name?: string; partner_address?: string;
   sold: number; stock: number; badge: string | null; description: string; active: number;
 };
 
@@ -8,7 +9,7 @@ export type Partner = {
   id: string; name: string; type: "vet" | "shop" | "both"; address: string;
   latitude: number; longitude: number; phone: string; rating: number; review_count: number;
   open_now: number; accepting_appointments: number; hours: string; services: string;
-  distance_km: number; verified: number;
+  distance_km: number; verified: number; directory_source?: string;
 };
 
 export type Pet = {

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getChatGPTUser } from "./chatgpt-auth";
+import { getCurrentActor } from "./auth";
 import CustomerApp from "./customer-app";
 
 export const metadata: Metadata = {
@@ -10,6 +10,6 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const user = await getChatGPTUser();
-  return <CustomerApp initialActor={user ? { email: user.email, fullName: user.displayName, isDemo: false } : null} />;
+  const user = await getCurrentActor();
+  return <CustomerApp initialActor={user} />;
 }

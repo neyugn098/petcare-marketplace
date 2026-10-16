@@ -1,13 +1,13 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 
-export const users = sqliteTable("users", {
+export const users = pgTable("users", {
   email: text("email").primaryKey(),
   fullName: text("full_name").notNull(),
   createdAt: text("created_at").notNull(),
 });
 
-export const partners = sqliteTable("partners", {
+export const partners = pgTable("partners", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   type: text("type", { enum: ["vet", "shop", "both"] }).notNull(),
@@ -17,16 +17,16 @@ export const partners = sqliteTable("partners", {
   phone: text("phone").notNull(),
   rating: real("rating").notNull().default(0),
   reviewCount: integer("review_count").notNull().default(0),
-  openNow: integer("open_now", { mode: "boolean" }).notNull().default(false),
-  acceptingAppointments: integer("accepting_appointments", { mode: "boolean" }).notNull().default(false),
+  openNow: integer("open_now").notNull().default(0),
+  acceptingAppointments: integer("accepting_appointments").notNull().default(0),
   hours: text("hours").notNull(),
   services: text("services").notNull(),
   distanceKm: real("distance_km").notNull().default(0),
-  verified: integer("verified", { mode: "boolean" }).notNull().default(false),
+  verified: integer("verified").notNull().default(0),
   updatedAt: text("updated_at").notNull(),
 });
 
-export const partnerUsers = sqliteTable("partner_users", {
+export const partnerUsers = pgTable("partner_users", {
   email: text("email").notNull(),
   partnerId: text("partner_id").notNull().references(() => partners.id),
   role: text("role", { enum: ["owner", "manager", "clinician", "staff"] }).notNull(),
@@ -35,7 +35,7 @@ export const partnerUsers = sqliteTable("partner_users", {
   index("partner_user_email_idx").on(table.email),
 ]);
 
-export const pets = sqliteTable("pets", {
+export const pets = pgTable("pets", {
   id: text("id").primaryKey(),
   ownerEmail: text("owner_email").notNull(),
   name: text("name").notNull(),
@@ -57,7 +57,7 @@ export const pets = sqliteTable("pets", {
   uniqueIndex("pet_qr_token_unique").on(table.qrToken),
 ]);
 
-export const vaccinations = sqliteTable("vaccinations", {
+export const vaccinations = pgTable("vaccinations", {
   id: text("id").primaryKey(),
   petId: text("pet_id").notNull().references(() => pets.id),
   vaccineName: text("vaccine_name").notNull(),
@@ -70,7 +70,7 @@ export const vaccinations = sqliteTable("vaccinations", {
   createdAt: text("created_at").notNull(),
 }, (table) => [index("vaccination_pet_idx").on(table.petId)]);
 
-export const appointments = sqliteTable("appointments", {
+export const appointments = pgTable("appointments", {
   id: text("id").primaryKey(),
   ownerEmail: text("owner_email").notNull(),
   petId: text("pet_id").notNull().references(() => pets.id),
@@ -87,7 +87,7 @@ export const appointments = sqliteTable("appointments", {
   uniqueIndex("appointment_active_slot_unique").on(table.ownerEmail, table.petId, table.partnerId, table.scheduledAt).where(sql`${table.status} IN ('pending','confirmed')`),
 ]);
 
-export const medicalRecords = sqliteTable("medical_records", {
+export const medicalRecords = pgTable("medical_records", {
   id: text("id").primaryKey(),
   petId: text("pet_id").notNull().references(() => pets.id),
   partnerId: text("partner_id").notNull().references(() => partners.id),
@@ -104,7 +104,7 @@ export const medicalRecords = sqliteTable("medical_records", {
   uniqueIndex("medical_record_appointment_unique").on(table.appointmentId),
 ]);
 
-export const products = sqliteTable("products", {
+export const products = pgTable("products", {
   id: text("id").primaryKey(),
   partnerId: text("partner_id").notNull().references(() => partners.id),
   name: text("name").notNull(),
@@ -118,11 +118,11 @@ export const products = sqliteTable("products", {
   stock: integer("stock").notNull().default(0),
   badge: text("badge"),
   description: text("description").notNull(),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  active: integer("active").notNull().default(1),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [index("product_partner_idx").on(table.partnerId)]);
 
-export const auditLogs = sqliteTable("audit_logs", {
+export const auditLogs = pgTable("audit_logs", {
   id: text("id").primaryKey(),
   actorEmail: text("actor_email").notNull(),
   action: text("action").notNull(),
@@ -131,7 +131,7 @@ export const auditLogs = sqliteTable("audit_logs", {
   createdAt: text("created_at").notNull(),
 }, (table) => [index("audit_rate_idx").on(table.actorEmail, table.action, table.createdAt)]);
 
-export const orders = sqliteTable("orders", {
+export const orders = pgTable("orders", {
   id: text("id").primaryKey(),
   orderCode: text("order_code").notNull(),
   ownerEmail: text("owner_email").notNull(),
@@ -146,7 +146,7 @@ export const orders = sqliteTable("orders", {
   index("order_partner_idx").on(table.partnerId, table.createdAt),
 ]);
 
-export const orderItems = sqliteTable("order_items", {
+export const orderItems = pgTable("order_items", {
   id: text("id").primaryKey(),
   orderId: text("order_id").notNull().references(() => orders.id),
   productId: text("product_id").notNull().references(() => products.id),

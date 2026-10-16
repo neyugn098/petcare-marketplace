@@ -1,0 +1,17 @@
+services:
+  demo:
+    build:
+      context: .
+      target: tools
+    command: ["pnpm", "exec", "next", "dev", "--hostname", "0.0.0.0", "--port", "3001"]
+    environment:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: postgresql://petcare:petcare_local@db:5432/petcare
+      APP_URL: http://localhost:3001
+      AUTH_MODE: demo
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully

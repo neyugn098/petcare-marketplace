@@ -1,0 +1,92 @@
+[
+  {
+    "id": "directory-hachiko-thu-duc",
+    "name": "Hachiko Petshop Thủ Đức",
+    "type": "shop",
+    "address": "128 Hoàng Diệu 2, Thủ Đức, TP. Hồ Chí Minh",
+    "latitude": 10.8562611,
+    "longitude": 106.7660503,
+    "source": "https://hachikopet.vn/",
+    "checkedAt": "2026-10-04"
+  },
+  {
+    "id": "directory-vietpet",
+    "name": "Phòng khám thú y Vietpet",
+    "type": "vet",
+    "address": "189A Đặng Văn Bi, Khu phố 4, Thủ Đức, TP. Hồ Chí Minh",
+    "latitude": 10.8470456,
+    "longitude": 106.7605076,
+    "source": "https://localvietnam.net/vi/b/phong-kham-thu-y-vietpet-cap-cuu-24-24-thu-duc",
+    "checkedAt": "2026-10-04"
+  },
+  {
+    "id": "directory-pet-health-centre",
+    "name": "Bệnh viện thú y Pet Health Centre Thủ Đức",
+    "type": "vet",
+    "address": "447E Lê Văn Việt, Tăng Nhơn Phú, Thủ Đức, TP. Hồ Chí Minh",
+    "latitude": 10.845237,
+    "longitude": 106.79269,
+    "source": "https://localvietnam.net/vi/b/benh-vien-thu-y-pet-health-centre-thu-duc-tang-nhon-phu",
+    "checkedAt": "2026-10-04"
+  },
+  {
+    "id": "directory-mini-pet",
+    "name": "Phòng khám thú y Mini Pet | Spa thú cưng Thủ Đức",
+    "type": "vet",
+    "address": "28 Đường số 6, Phước Long, Thủ Đức, TP. Hồ Chí Minh",
+    "latitude": 10.8173019,
+    "longitude": 106.7729321,
+    "source": "https://pktyminipet.com/",
+    "checkedAt": "2026-10-04"
+  },
+  {
+    "id": "directory-beliv",
+    "name": "Phòng khám thú y BELIV Thủ Đức",
+    "type": "vet",
+    "address": "51 Lê Văn Việt, Tăng Nhơn Phú, Thủ Đức, TP. Hồ Chí Minh",
+    "latitude": 10.8480302,
+    "longitude": 106.7756835,
+    "source": "https://localvietnam.net/vi/b/phong-kham-thu-y-beliv-thu-duc-tang-nhon-phu",
+    "checkedAt": "2026-10-04"
+  },
+  {
+    "id": "directory-boss-yeu",
+    "name": "Phòng khám thú y Boss Yêu – Thủ Đức",
+    "type": "vet",
+    "address": "29 Hàn Thuyên, Thủ Đức, TP. Hồ Chí Minh",
+    "latitude": 10.8463684,
+    "longitude": 106.7694661,
+    "source": "https://localvietnam.net/vi/b/phong-kham-thu-y-boss-yeu-thu-y-thu-duc-thu-duc",
+    "checkedAt": "2026-10-04"
+  },
+  {
+    "id": "directory-xom-meo-xoai",
+    "name": "Xốp Mèo Xoài – Pet shop Thủ Đức",
+    "type": "shop",
+    "address": "14 Đặng Văn Bi, Thủ Đức, TP. Hồ Chí Minh",
+    "latitude": 10.8397145,
+    "longitude": 106.7663118,
+    "source": "https://maps.app.goo.gl/9rgR2ckiQK4AWuCx8",
+    "checkedAt": "2026-10-04"
+  },
+  {
+    "id": "directory-the-gioi-pet-cung",
+    "name": "Thế giới của Pet cưng",
+    "type": "shop",
+    "address": "113/4 Đường số 8, Thủ Đức, TP. Hồ Chí Minh",
+    "latitude": 10.8578601,
+    "longitude": 106.7745459,
+    "source": "https://maps.app.goo.gl/AbxSWUyyLq7Bf9BC7",
+    "checkedAt": "2026-10-04"
+  },
+  {
+    "id": "directory-dr-tom",
+    "name": "Bệnh viện thú y Dr. Tom",
+    "type": "vet",
+    "address": "148 Đường số 17, Thủ Đức, TP. Hồ Chí Minh",
+    "latitude": 10.8650038,
+    "longitude": 106.7876173,
+    "source": "https://maps.app.goo.gl/LRD6GpjiBriKr1Hy5",
+    "checkedAt": "2026-10-04"
+  }
+]

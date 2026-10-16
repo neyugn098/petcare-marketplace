@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? "https";
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "petcare.local";
-  const baseUrl = new URL(`${protocol}://${host}`);
+  const baseUrl = new URL(process.env.APP_URL || "http://localhost:3000");
   return {
     metadataBase: baseUrl,
     title: { default: "PetCare — Mua sắm & chăm sóc thú cưng", template: "%s · PetCare" },

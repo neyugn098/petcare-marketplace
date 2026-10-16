@@ -1,29 +1,45 @@
+/* Auth endpoints require full navigation; QR images are generated data URLs. */
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
-import dynamic from "next/dynamic";
+import { catalogProducts } from "./catalog";
+import NearbyView from "./nearby-view";
 import { BRAND, FALLBACK_DATA, PAYMENT_CONFIG } from "./config";
 import { formatVietnamDate, formatVietnamDateTime, formatVietnamTime, formatVnd, getVietnamDateParts } from "./format";
 import type { AppData, Order, Partner, Pet, Product } from "./types";
 
 type View = "shop" | "nearby" | "pets" | "appointments" | "orders";
 type CheckoutOrder = { id: string; orderCode: string; total: number; status: string };
-const NearbyMap = dynamic(() => import("./nearby-map"), { ssr: false, loading: () => <div className="map-loading">Äang táº£i báº£n Ä‘á»“...</div> });
 
 const money = formatVnd;
 const dateText = formatVietnamDate;
 const dateTimeText = formatVietnamDateTime;
-const SIGN_IN_PATH = "/signin-with-chatgpt?return_to=%2F";
-const SIGN_OUT_PATH = "/signout-with-chatgpt?return_to=%2F";
+const SIGN_IN_PATH = "/auth/signin?return_to=%2F";
+const SIGN_OUT_PATH = "/auth/signout?return_to=%2F";
 const normalizeSearch = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/Ä‘/g, "d").replace(/Ä/g, "D").toLowerCase().trim();
+const CATEGORY_FILTERS: Record<string, string[]> = {
+  "Táº¥t cáº£": [],
+  "Thá»±c pháº©m": ["Thá»©c Äƒn", "Thá»±c pháº©m"],
+  "Thá»i trang": ["Phá»¥ kiá»‡n", "Thá»i trang"],
+  "Sá»©c khá»e": ["ChÄƒm sÃ³c", "Thuá»‘c thÃº y", "Sá»©c khá»e"],
+  "Äá»“ chÆ¡i": ["Äá»“ chÆ¡i"],
+};
+const CATEGORY_CARDS = [
+  { id: "Thá»±c pháº©m", icon: "ğŸ¥£", title: "Thá»±c pháº©m", text: "Pate, háº¡t, snack theo nhu cáº§u má»—i bÃ©" },
+  { id: "Thá»i trang", icon: "ğŸ§£", title: "Boss thá»i trang", text: "Ão, yáº¿m, phá»¥ kiá»‡n dáº¡o phá»‘" },
+  { id: "Sá»©c khá»e", icon: "âœš", title: "Sá»©c khá»e", text: "ChÄƒm sÃ³c, vá»‡ sinh vÃ  Ä‘á»“ thÃº y" },
+  { id: "Äá»“ chÆ¡i", icon: "ğŸ§¸", title: "Äá»“ chÆ¡i", text: "Giáº£i trÃ­, váº­n Ä‘á»™ng, giáº£m stress" },
+];
+const productInCategory = (product: Product, selected: string) => selected === "Táº¥t cáº£" || (CATEGORY_FILTERS[selected] ?? [selected]).includes(product.category);
 
 function mergeData(payload: Partial<AppData>): AppData {
   return {
     ...FALLBACK_DATA,
     ...payload,
-    products: payload.products ?? FALLBACK_DATA.products,
-    partners: payload.partners ?? FALLBACK_DATA.partners,
+    products: payload.products ?? [],
+    partners: payload.partners ?? [],
     pets: payload.pets ?? [],
     appointments: payload.appointments ?? [],
     vaccinations: payload.vaccinations ?? [],
@@ -39,7 +55,7 @@ function mergeData(payload: Partial<AppData>): AppData {
 
 export default function CustomerApp({ initialActor }: { initialActor: AppData["actor"] }) {
   const [view, setView] = useState<View>("shop");
-  const [data, setData] = useState<AppData>({ ...FALLBACK_DATA, actor: initialActor, requiresSignIn: !initialActor });
+  const [data, setData] = useState<AppData>({ ...FALLBACK_DATA, products: [], actor: initialActor, requiresSignIn: !initialActor });
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("Táº¥t cáº£");
   const [nearbyType, setNearbyType] = useState<"vet" | "shop">("vet");
@@ -76,11 +92,11 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
 
   const effectiveSelectedPetId = data.pets.some((pet) => pet.id === selectedPetId) ? selectedPetId : (data.pets[0]?.id ?? "");
   const selectedPet = data.pets.find((pet) => pet.id === effectiveSelectedPetId) ?? data.pets[0];
-  const categories = ["Táº¥t cáº£", "Thá»©c Äƒn", "Phá»¥ kiá»‡n", "Äá»“ chÆ¡i", "ChÄƒm sÃ³c"];
-  const filteredProducts = useMemo(() => data.products.filter((product) => {
+  const categories = Object.keys(CATEGORY_FILTERS);
+  const filteredProducts = useMemo(() => catalogProducts(data.products).filter((product) => {
     const needle = normalizeSearch(search);
-    const matchesCategory = Boolean(needle) || category === "Táº¥t cáº£" || product.category === category;
-    const haystack = normalizeSearch(`${product.name} ${product.category} ${product.description}`);
+    const matchesCategory = Boolean(needle) || productInCategory(product, category);
+    const haystack = normalizeSearch(`${product.name} ${product.category} ${product.description} ${product.partner_name ?? ""} ${product.partner_address ?? ""}`);
     return matchesCategory && (!needle || haystack.includes(needle));
   }), [category, data.products, search]);
   const searchSuggestions = normalizeSearch(search) ? filteredProducts.slice(0, 5) : [];
@@ -95,6 +111,8 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
   };
 
   const addToCart = (id: string) => {
+    const product = data.products.find(p => p.id === id);
+    if (!product || product.is_sample || !product.active || product.stock < 1) return;
     setCart((current) => ({ ...current, [id]: (current[id] ?? 0) + 1 }));
     setToast("ÄÃ£ thÃªm vÃ o giá» â€” boss sáº¯p cÃ³ quÃ  rá»“i! ğŸ¾");
   };
@@ -145,6 +163,11 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
   };
 
   const actorInitials = data.actor?.fullName.split(/\s+/).filter(Boolean).slice(-2).map((part) => part[0]?.toUpperCase()).join("") || "TK";
+  const openCategory = (id: string) => {
+    setCategory(id);
+    setView("shop");
+    window.requestAnimationFrame(() => document.getElementById("best-sellers")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
 
   return (
     <div className="site-shell">
@@ -160,17 +183,24 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
           {normalizeSearch(search) && <div className="search-suggestions" id="search-suggestions" role="listbox" aria-label="Gá»£i Ã½ sáº£n pháº©m">{searchSuggestions.map((product) => <button key={product.id} role="option" aria-selected="false" onMouseDown={(event) => event.preventDefault()} onClick={() => selectSearchProduct(product)}><span>{product.visual}</span><p><b>{product.name}</b><small>{product.category} Â· {money(product.price)}</small></p></button>)}{!searchSuggestions.length && <p className="search-no-result">KhÃ´ng tÃ¬m tháº¥y sáº£n pháº©m phÃ¹ há»£p.</p>}</div>}
         </div>
         <nav className="desktop-nav" aria-label="Äiá»u hÆ°á»›ng chÃ­nh">
-          <button className={view === "shop" ? "active" : ""} onClick={() => navigate("shop")}>Cá»­a hÃ ng</button>
           <button className={view === "nearby" ? "active" : ""} onClick={() => navigate("nearby")}>Gáº§n báº¡n</button>
           <button className={view === "pets" ? "active" : ""} onClick={() => navigate("pets")}>Há»“ sÆ¡ pet</button>
+          <button className={view === "appointments" ? "active" : ""} onClick={() => navigate("appointments")}>Lá»‹ch khÃ¡m</button>
         </nav>
         <div className="header-actions">
           <a className="partner-link" href="/partner">DÃ nh cho Ä‘á»‘i tÃ¡c</a>
           <button className="icon-button" onClick={() => navigate("appointments")} aria-label="Lá»‹ch khÃ¡m">â™¡</button>
           <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`Giá» hÃ ng cÃ³ ${cartCount} sáº£n pháº©m`}>TÃºi <b>{cartCount}</b></button>
-          {data.actor ? <div className="account-session"><button className="avatar-button" aria-label="Má»Ÿ thÃ´ng tin phiÃªn Ä‘Äƒng nháº­p" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{actorInitials}</button>{accountOpen && <div className="account-menu"><b>{data.actor.fullName}</b><small>{data.actor.email}</small><span>ğŸ”’ {data.actor.isDemo ? "PhiÃªn demo cá»¥c bá»™" : "TÃ i khoáº£n PetCare Ä‘Ã£ Ä‘á»“ng bá»™"}</span><button onClick={() => { setAccountOpen(false); navigate("orders"); }}>ÄÆ¡n hÃ ng cá»§a tÃ´i</button>{data.actor.isDemo ? <button onClick={() => setAccountOpen(false)}>ÄÃ³ng</button> : <a href={SIGN_OUT_PATH}>ÄÄƒng xuáº¥t</a>}</div>}</div> : <div className="guest-auth"><a className="account-login" href={SIGN_IN_PATH}>ÄÄƒng nháº­p</a><a className="account-register" href={SIGN_IN_PATH}>ÄÄƒng kÃ½</a></div>}
+          {data.actor ? <div className="account-session"><button className="avatar-button" aria-label="Má»Ÿ thÃ´ng tin phiÃªn Ä‘Äƒng nháº­p" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{actorInitials}</button>{accountOpen && <div className="account-menu"><b>{data.actor.fullName}</b><small>{data.actor.email}</small><span>ğŸ”’ {data.actor.isDemo ? "PhiÃªn demo cá»¥c bá»™" : "TÃ i khoáº£n PetCare Ä‘Ã£ Ä‘á»“ng bá»™"}</span><button onClick={() => { setAccountOpen(false); navigate("orders"); }}>ÄÆ¡n hÃ ng cá»§a tÃ´i</button>{data.actor.isDemo ? <button onClick={() => setAccountOpen(false)}>ÄÃ³ng</button> : <form action={SIGN_OUT_PATH} method="post"><button type="submit">ÄÄƒng xuáº¥t</button></form>}</div>}</div> : <div className="guest-auth"><a className="account-login" href={SIGN_IN_PATH}>ÄÄƒng nháº­p</a><a className="account-register" href={SIGN_IN_PATH}>ÄÄƒng kÃ½</a></div>}
         </div>
       </header>
+      <section className="section-wrap category-showcase top-category-nav" aria-label="Danh má»¥c chÃ­nh">
+        {CATEGORY_CARDS.map((item) => <button key={item.id} className={view === "shop" && category === item.id ? "active" : ""} onClick={() => openCategory(item.id)}>
+          <span>{item.icon}</span>
+          <b>{item.title}</b>
+          <small>{item.text}</small>
+        </button>)}
+      </section>
 
       <main>
         {view === "shop" && <ShopView products={filteredProducts} categories={categories} category={category} setCategory={setCategory} addToCart={addToCart} onNearby={() => navigate("nearby")} />}
@@ -198,8 +228,144 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
       {bookingPartner && <BookingModal partner={bookingPartner} pets={data.pets} onClose={() => setBookingPartner(null)} onSuccess={async () => { setBookingPartner(null); setToast("ÄÃ£ gá»­i yÃªu cáº§u. PhÃ²ng khÃ¡m sáº½ xÃ¡c nháº­n sá»›m!"); await reload(); setView("appointments"); }} />}
       {qrPet && <QrModal pet={qrPet} onClose={() => setQrPet(null)} />}
       {checkoutOpen && checkoutOrder && <CheckoutModal order={checkoutOrder} onClose={() => setCheckoutOpen(false)} onSuccess={async () => { setCheckoutOpen(false); setCheckoutOrder(null); setCart({}); setToast("ÄÆ¡n hÃ ng Ä‘ang chá» cá»­a hÃ ng Ä‘á»‘i soÃ¡t thanh toÃ¡n."); await reload(); setView("orders"); }} />}
-      {petFormOpen && <PetFormModal pet={petFormPet} onClose={() => { setPetFormOpen(false); setPetFormPet(null); }} onSuccess={async () => { setPetFormOpen(false); setPetFormPet(null); setToast(petFormPet ? "ÄÃ£ cáº­p nháº­t há»“ sÆ¡ cá»§a bÃ©." : "ÄÃ£ táº¡o há»“ sÆ¡ má»›i vÃ  cáº¥p QR riÃªng cho bÃ©."); await ã½u¶‰Ëkºwµçj¸­£…´ğ½Àøğ½‘¥Øøğ½‘¥ØùíÉ•½É‘Ì¹µ…À ¡É•½É¤€ôø€ñ…ÉÑ¥±”±…ÍÍ9…µ”ô‰µ•‘¥…°µ…Éˆ­•äõíÉ•½É¹¥‘ôøñ‘¥Ø±…ÍÍ9…µ”ô‰µ•‘¥…°µ‘…Ñ”ˆøñˆùí¹•Ü…Ñ”¡É•½É¹Ù¥Í¥Ñ•‘}…Ğ¤¹•Ñ…Ñ” ¥ôğ½ˆøñÍÁ…¸ùQ!í¹•Ü…Ñ”¡É•½É¹Ù¥Í¥Ñ•‘}…Ğ¤¹•Ñ5½¹Ñ  ¤€¬€Åôğ½ÍÁ…¸øğ½‘¥Øøñ‘¥Øøñ ÌùíÉ•½É¹‘¥…¹½Í¥Íôğ½ ÌøñÀùíÉ•½É¹ÑÉ•…Ñµ•¹Ñôğ½Àøñ‘¥Ø±…ÍÍ9…µ”ô‰µ•‘¥…°µµ•Ñ„ˆøñÍÁ…¸ûŠrhíÉ•½É¹Á…ÉÑ¹•É}¹…µ•ôğ½ÍÁ…¸øñÍÁ…¸ûŠfdíÉ•½É¹±¥¹¥¥…¹ôğ½ÍÁ…¸øğ½‘¥ØùíÉ•½É¹ÁÉ•ÍÉ¥ÁÑ¥½¸€˜˜€ñÍµ…±°øñˆûC…¸Ñ¡×†îEŒèğ½ˆøíÉ•½É¹ÁÉ•ÍÉ¥ÁÑ¥½¹ôğ½Íµ…±°ùôğ½‘¥Øøñ‰ÕÑÑ½¸…É¥„µ±…‰•°ô‰a•´¡¤Ñ§†êıĞ£†îLÏ„ˆûŠèğ½‰ÕÑÑ½¸øğ½…ÉÑ¥±”ø¥ôğ½Í•Ñ¥½¸ø(€€€€€€ğ½‘¥Øø(€€€€ğ½‘¥Øø(€€ğ½Í•Ñ¥½¸øì)ô()™Õ¹Ñ¥½¸ÁÁ½¥¹Ñµ•¹ÑÍY¥•Ü¡ì‘…Ñ„°½¹¥¹‘Y•Ğôèì‘…Ñ„èÁÁ…Ñ„ì½¹¥¹‘Y•Ğè€ ¤€ôøÙ½¥ô¤ì(€É•ÑÕÉ¸€ñÍ•Ñ¥½¸±…ÍÍ9…µ”ô‰Í•Ñ¥½¸µİÉ…À…ÁÁ½¥¹Ñµ•¹ÑÌµÁ…”ˆøñ‘¥Ø±…ÍÍ9…µ”ô‰Á•ĞµÁ…”µ¡•…ˆøñ‘¥ØøñÍÁ…¸±…ÍÍ9…µ”ô‰•å•‰É½ÜˆùQ¡•¼“Õ¤Ó†î¬³éŒŸ†îµ¤ƒG†êı¸­¡¤­£…´ğ½ÍÁ…¸øñ Äù3†î- ­£…´†î„‹¤ğ½ Äøğ½‘¥Øøñ‰ÕÑÑ½¸±…ÍÍ9…µ”ô‰ÁÉ¥µ…Éäµ‰ÕÑÑ½¸Íµ…±°ˆ½¹±¥¬õí½¹¥¹‘Y•Ñôø¬ƒC†êİĞ³†î- ·†îm¤ğ½‰ÕÑÑ½¸øğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰…ÁÁ½¥¹Ñµ•¹ĞµÉ¥ˆùí‘…Ñ„¹…ÁÁ½¥¹Ñµ•¹ÑÌ¹µ…À ¡¥Ñ•´¤€ôøì½¹ÍĞİ¡•¸€ô•ÑY¥•Ñ¹…µ…Ñ•A…ÉÑÌ¡¥Ñ•´¹Í¡•‘Õ±•‘}…Ğ¤ìÉ•ÑÕÉ¸€ñ…ÉÑ¥±”±…ÍÍ9…µ”ô‰…ÁÁ½¥¹Ñµ•¹Ğµ…Éˆ­•äõí¥Ñ•´¹¥‘ôøñ‘¥Ø±…ÍÍ9…µ”ô‰…ÁÁ½¥¹Ñµ•¹Ğµ‘…Ñ”ˆøñˆùíİ¡•¸ü¹‘…ä€üü€‹ŠP‰ôğ½ˆøñÍÁ…¸ùQ£…¹œíİ¡•¸ü¹µ½¹Ñ €üü€‹ŠP‰ôğ½ÍÁ…¸øñÍµ…±°ùí™½Éµ…ÑY¥•Ñ¹…µQ¥µ”¡¥Ñ•´¹Í¡•‘Õ±•‘}…Ğ¥ôğ½Íµ…±°øğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰…ÁÁ½¥¹Ñµ•¹Ğµ½¹Ñ•¹Ğˆøñ‘¥ØøñÍÁ…¸±…ÍÍ9…µ”õí…ÁÁ½¥¹Ñµ•¹ĞµÍÑ…ÑÕÌ€‘í¥Ñ•´¹ÍÑ…ÑÕÍõôùí¥Ñ•´¹ÍÑ…ÑÕÌ€ôôô€‰Á•¹‘¥¹œˆ€ü€‰£†ît‘Õç†îĞˆ€è¥Ñ•´¹ÍÑ…ÑÕÌ€ôôô€‰½¹™¥Éµ•ˆ€ü€‹CŒã…Œ¹£†êµ¸ˆ€è¥Ñ•´¹ÍÑ…ÑÕÌ€ôôô€‰½µÁ±•Ñ•ˆ€ü€‹CŒ­£…´ˆ€è€‹CŒ£†îä‰ôğ½ÍÁ…¸øñ Èùí¥Ñ•´¹É•…Í½¹ôğ½ ÈøñÀùí¥Ñ•´¹Á…ÉÑ¹•É}¹…µ•ôğ½Àøğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰…ÁÁ½¥¹Ñµ•¹ĞµÁ•ĞˆøñÍÁ…¸ùí‘…Ñ„¹Á•ÑÌ¹™¥¹ ¡Á•Ğ¤€ôøÁ•Ğ¹¥€ôôô¥Ñ•´¹Á•Ñ}¥¤ü¹…Ù…Ñ…È€üü€‹Â~Bø‰ôğ½ÍÁ…¸øñÀøñˆùí¥Ñ•´¹Á•Ñ}¹…µ•ôğ½ˆøñÍµ…±°ùí¥Ñ•´¹¹½Ñ•ôğ½Íµ…±°øğ½Àøğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰…ÁÁ½¥¹Ñµ•¹Ğµ…Ñ¥½¹Ìˆøñ‰ÕÑÑ½¸±…ÍÍ9…µ”ô‰Í•½¹‘…Éäµ‰ÕÑÑ½¸ˆùa•´¡¤Ñ§†êıĞğ½‰ÕÑÑ½¸øñ„±…ÍÍ9…µ”ô‰Ñ•áĞµ‰ÕÑÑ½¸ˆ¡É•˜õíÑ•°è‘í‘…Ñ„¹Á…ÉÑ¹•ÉÌ¹™¥¹ ¡Á…ÉÑ¹•È¤€ôøÁ…ÉÑ¹•È¹¥€ôôô¥Ñ•´¹Á…ÉÑ¹•É}¥¤ü¹Á¡½¹”€üü€ˆ‰õôù†î5¤Á£É¹œ­£…´ğ½„øğ½‘¥Øøğ½‘¥Øøğ½…ÉÑ¥±”øìô¥õì…‘…Ñ„¹…ÁÁ½¥¹Ñµ•¹ÑÌ¹±•¹Ñ €˜˜€ñ‘¥Ø±…ÍÍ9…µ”ô‰•µÁÑäµÍÑ…Ñ”ˆøñÍÁ…¸ûŠZŒğ½ÍÁ…¸øñ Ìù£Á„Ì³†î- ­£…´ğ½ ÌøñÀùS±´„Ï†î|ƒE…¹œ·†î|Û€£†î5¸§†îtÁ£ä£†îÀ¡¼‹¤¸ğ½Àøñ‰ÕÑÑ½¸±…ÍÍ9…µ”ô‰ÁÉ¥µ…Éäµ‰ÕÑÑ½¸Íµ…±°ˆ½¹±¥¬õí½¹¥¹‘Y•ÑôùS±´Ñ£èäŸ†ê¸ÓÑ¤ğ½‰ÕÑÑ½¸øğ½‘¥Øùôğ½‘¥Øøğ½Í•Ñ¥½¸øì)ô()™Õ¹Ñ¥½¸=É‘•ÉÍY¥•Ü¡ì½É‘•ÉÌ°½¹M¡½Àôèì½É‘•ÉÌè=É‘•Émtì½¹M¡½Àè€ ¤€ôøÙ½¥ô¤ì(€½¹ÍĞ±…‰•±ÌèI•½Éñ=É‘•Él‰ÍÑ…ÑÕÌ‰t°ÍÑÉ¥¹œø€ôìÁ•¹‘¥¹}Á…åµ•¹Ğè€‰£†îtÑ¡…¹ Ñ¿…¸ˆ°Á…åµ•¹Ñ}É•Ù¥•Üè€‰£†îtƒG†îE¤Í¿…Ğˆ°Á…¥è€‹CŒÑ¡…¹ Ñ¿…¸ˆ°…¹•±±•è€‹CŒ£†îäˆ°™Õ±™¥±±•è€‹CŒ¡¿¸Ó†ê•Ğˆôì(€É•ÑÕÉ¸€ñÍ•Ñ¥½¸±…ÍÍ9…µ”ô‰Í•Ñ¥½¸µİÉ…À½É‘•ÉÌµÁ…”ˆøñ‘¥Ø±…ÍÍ9…µ”ô‰Á•ĞµÁ…”µ¡•…ˆøñ‘¥ØøñÍÁ…¸±…ÍÍ9…µ”ô‰•å•‰É½ÜˆùQ¡•¼“Õ¤Ñ¡…¹ Ñ¿…¸Û€¥…¼£¹œğ½ÍÁ…¸øñ ÄûC…¸£¹œ†î„ÓÑ¤ğ½ Äøğ½‘¥Øøñ‰ÕÑÑ½¸±…ÍÍ9…µ”ô‰ÁÉ¥µ…Éäµ‰ÕÑÑ½¸Íµ…±°ˆ½¹±¥¬õí½¹M¡½ÁôùQ§†êıÀÓ†î•ŒµÕ„Ï†ê½´ğ½‰ÕÑÑ½¸øğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰ÕÍÑ½µ•Èµ½É‘•ÉÌˆùí½É‘•ÉÌ¹µ…À ¡½É‘•È¤€ôø€ñ…ÉÑ¥±”­•äõí½É‘•È¹¥‘ôøñ¡•…‘•Èøñ‘¥ØøñÍµ…±°ù7ŒƒG…¸ğ½Íµ…±°øñˆùí½É‘•È¹½É‘•É}½‘•ôğ½ˆøğ½‘¥ØøñÍÁ…¸±…ÍÍ9…µ”õí½É‘•ÈµÍÑ…ÑÕÌ€‘í½É‘•È¹ÍÑ…ÑÕÍõôùí±…‰•±Ím½É‘•È¹ÍÑ…ÑÕÍuôğ½ÍÁ…¸øğ½¡•…‘•ÈøñÀùí½É‘•È¹Á…ÉÑ¹•É}¹…µ•ôğ½Àøñ‘¥Ø±…ÍÍ9…µ”ô‰½É‘•Èµ±¥¹•Ìˆùí½É‘•È¹¥Ñ•µÌü¹µ…À ¡¥Ñ•´¤€ôø€ñÍÁ…¸­•äõí¥Ñ•´¹¥‘ôøñˆùí¥Ñ•´¹ÁÉ½‘ÕÑ}¹…µ•ôğ½ˆøñ•´ùí¥Ñ•´¹ÅÕ…¹Ñ¥Ñåôƒ\íµ½¹•ä¡¥Ñ•´¹Õ¹¥Ñ}ÁÉ¥”¥ôğ½•´øğ½ÍÁ…¸ø¥ôğ½‘¥Øøñ™½½Ñ•ÈøñÍµ…±°ùí‘…Ñ•Q¥µ•Q•áĞ¡½É‘•È¹É•…Ñ•‘}…Ğ¥ôğ½Íµ…±°øñÍÑÉ½¹œùíµ½¹•ä¡½É‘•È¹Ñ½Ñ…±}…µ½Õ¹Ğ¥ôğ½ÍÑÉ½¹œøğ½™½½Ñ•Èøğ½…ÉÑ¥±”ø¥õì…½É‘•ÉÌ¹±•¹Ñ €˜˜€ñ‘¥Ø±…ÍÍ9…µ”ô‰•µÁÑäµÍÑ…Ñ”ˆøñÍÁ…¸ûŠ^ğ½ÍÁ…¸øñ Ìù£Á„ÌƒG…¸£¹œğ½ ÌøñÀùO†ê¸Á£†ê¥´‹†ê…¸µÕ„Ï†êôƒGÃ†îŒ³ÁÔÛ€ƒG†îM¹œ‹†îdÛ†îm¤†îµ„£¹œÓ†ê…¤ƒG‰ä¸ğ½Àøñ‰ÕÑÑ½¸±…ÍÍ9…µ”ô‰ÁÉ¥µ…Éäµ‰ÕÑÑ½¸Íµ…±°ˆ½¹±¥¬õí½¹M¡½Áôù-£…´Á£„†îµ„£¹œğ½‰ÕÑÑ½¸øğ½‘¥Øùôğ½‘¥Øøğ½Í•Ñ¥½¸øì)ô()™Õ¹Ñ¥½¸5½‘…±M¡•±°¡ìÑ¥Ñ±”°½¹±½Í”°¡¥±‘É•¸°±…ÍÍ9…µ”€ô€ˆˆôèìÑ¥Ñ±”èÍÑÉ¥¹œì½¹±½Í”è€ ¤€ôøÙ½¥ì¡¥±‘É•¸èI•…Ğ¹I•…Ñ9½‘”ì±…ÍÍ9…µ”üèÍÑÉ¥¹œô¤ì(€É•ÑÕÉ¸€ñ‘¥Ø±…ÍÍ9…µ”ô‰µ½‘…°µ‰…­‘É½Àˆ½¹5½ÕÍ•½İ¸õì¡•Ù•¹Ğ¤€ôøì¥˜€¡•Ù•¹Ğ¹ÕÉÉ•¹ÑQ…É•Ğ€ôôô•Ù•¹Ğ¹Ñ…É•Ğ¤½¹±½Í” ¤ìõôøñ‘¥Ø±…ÍÍ9…µ”õíµ½‘…°µ…É€‘í±…ÍÍ9…µ•õôÉ½±”ô‰‘¥…±½œˆ…É¥„µµ½‘…°ô‰ÑÉÕ”ˆ…É¥„µ±…‰•°õíÑ¥Ñ±•ôøñ‘¥Ø±…ÍÍ9…µ”ô‰µ½‘…°µ¡•…ˆøñ ÈùíÑ¥Ñ±•ôğ½ Èøñ‰ÕÑÑ½¸½¹±¥¬õí½¹±½Í•ô…É¥„µ±…‰•°ô‹CÍ¹œˆû\ğ½‰ÕÑÑ½¸øğ½‘¥Øùí¡¥±‘É•¹ôğ½‘¥Øøğ½‘¥Øøì)ô()™Õ¹Ñ¥½¸	½½­¥¹5½‘…°¡ìÁ…ÉÑ¹•È°Á•ÑÌ°½¹±½Í”°½¹MÕ•ÍÌôèìÁ…ÉÑ¹•ÈèA…ÉÑ¹•ÈìÁ•ÑÌèA•Ñmtì½¹±½Í”è€ ¤€ôøÙ½¥ì½¹MÕ•ÍÌè€ ¤€ôøÙ½¥ô¤ì(€½¹ÍĞm‰ÕÍä°Í•Ñ	ÕÍåt€ôÕÍ•MÑ…Ñ”¡™…±Í”¤ì½¹ÍĞm•ÉÉ½È°Í•ÑÉÉ½Ét€ôÕÍ•MÑ…Ñ” ˆˆ¤ì(€½¹ÍĞmµ¥¹¥µÕµ…Ñ•Q¥µ•t€ôÕÍ•MÑ…Ñ”  ¤€ôø¹•Ü…Ñ”¡…Ñ”¹¹½Ü ¤€¬€ÌØÀÀÀÀÀ¤¹Ñ½%M=MÑÉ¥¹œ ¤¹Í±¥” À°€ÄØ¤¤ì(€½¹ÍĞÍÕ‰µ¥Ğ€ô…Íå¹Œ€¡•Ù•¹Ğè½ÉµÙ•¹Ğñ!Q51½Éµ±•µ•¹Ğø¤€ôøì(€€€•Ù•¹Ğ¹ÁÉ•Ù•¹Ñ•™…Õ±Ğ ¤ìÍ•Ñ	ÕÍä¡ÑÉÕ”¤ìÍ•ÑÉÉ½È ˆˆ¤ì(€€€½¹ÍĞ™½É´€ô¹•Ü½Éµ…Ñ„¡•Ù•¹Ğ¹ÕÉÉ•¹ÑQ…É•Ğ¤ì½¹ÍĞÍ¡•‘Õ±•€ôMÑÉ¥¹œ¡™½É´¹•Ğ ‰Í¡•‘Õ±•‘Ğˆ¤€üü€ˆˆ¤ì(€€€ÑÉäì½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ™•Ñ  ˆ½…Á¤½…ÁÀˆ°ìµ•Ñ¡½è€‰A=MPˆ°¡•…‘•ÉÌèì€‰½¹Ñ•¹ĞµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô°‰½‘äè)M=8¹ÍÑÉ¥¹¥™ä¡ì…Ñ¥½¸è€‰É•…Ñ•ÁÁ½¥¹Ñµ•¹Ğˆ°Á…ÉÑ¹•É%èÁ…ÉÑ¹•È¹¥°Á•Ñ%è™½É´¹•Ğ ‰Á•Ñ%ˆ¤°Í¡•‘Õ±•‘Ğè¹•Ü…Ñ”¡Í¡•‘Õ±•¤¹Ñ½%M=MÑÉ¥¹œ ¤°É•…Í½¸è™½É´¹•Ğ ‰É•…Í½¸ˆ¤°¹½Ñ”è™½É´¹•Ğ ‰¹½Ñ”ˆ¤ô¤ô¤ì½¹ÍĞ‰½‘ä€ô…İ…¥ĞÉ•ÍÁ½¹Í”¹©Í½¸ ¤…Ìì•ÉÉ½ÈüèÍÑÉ¥¹œôì¥˜€ …É•ÍÁ½¹Í”¹½¬¤Ñ¡É½Ü¹•ÜÉÉ½È¡‰½‘ä¹•ÉÉ½È€üü€‰-£Ñ¹œÑ£†îƒG†êİĞ³†î- ˆ¤ì½¹MÕ•ÍÌ ¤ìô…Ñ €¡…Õ¡Ğ¤ìÍ•ÑÉÉ½È¡…Õ¡Ğ¥¹ÍÑ…¹•½˜ÉÉ½È€ü…Õ¡Ğ¹µ•ÍÍ…”€è€‰-£Ñ¹œÑ£†îƒG†êİĞ³†î- ˆ¤ìô™¥¹…±±äìÍ•Ñ	ÕÍä¡™…±Í”¤ìô(€ôì(€É•ÑÕÉ¸€ñ5½‘…±M¡•±°Ñ¥Ñ±”ô‹C†êİĞ³†î- ­£…´ˆ½¹±½Í”õí½¹±½Í•ôøñ‘¥Ø±…ÍÍ9…µ”ô‰‰½½­¥¹œµ±¥¹¥ŒˆøñÍÁ…¸ûŠrhğ½ÍÁ…¸øñ‘¥ØøñˆùíÁ…ÉÑ¹•È¹¹…µ•ôğ½ˆøñÍµ…±°ùíÁ…ÉÑ¹•È¹…‘‘É•ÍÍôğ½Íµ…±°øğ½‘¥Øøñ•´ûA…¹œ¹£†êµ¸³†î- ğ½•´øğ½‘¥Øøñ™½É´±…ÍÍ9…µ”ô‰‰½½­¥¹œµ™½É´ˆ½¹MÕ‰µ¥ĞõíÍÕ‰µ¥Ñôøñ±…‰•°ù¤†ê¸­£…´ñÍ•±•Ğ¹…µ”ô‰Á•Ñ%ˆÉ•ÅÕ¥É•ùíÁ•ÑÌ¹µ…À ¡Á•Ğ¤€ôø€ñ½ÁÑ¥½¸­•äõíÁ•Ğ¹¥‘ôÙ…±Õ”õíÁ•Ğ¹¥‘ôùíÁ•Ğ¹¹…µ•ôƒ
-ÜíÁ•Ğ¹‰É••‘ôğ½½ÁÑ¥½¸ø¥ôğ½Í•±•Ğøğ½±…‰•°øñ±…‰•°ù9ŸäÛ€§†îtñ¥¹ÁÕĞ¹…µ”ô‰Í¡•‘Õ±•‘ĞˆÑåÁ”ô‰‘…Ñ•Ñ¥µ”µ±½…°ˆµ¥¸õíµ¥¹¥µÕµ…Ñ•Q¥µ•ôÉ•ÅÕ¥É•€¼øğ½±…‰•°øñ±…‰•°ù3ô‘¼­£…´ñÍ•±•Ğ¹…µ”ô‰É•…Í½¸ˆÉ•ÅÕ¥É•øñ½ÁÑ¥½¸ù-£…´Ó†îU¹œÅ×…Ğğ½½ÁÑ¥½¸øñ½ÁÑ¥½¸ùQ§©´Á£É¹œğ½½ÁÑ¥½¸øñ½ÁÑ¥½¸ù-£…´‘„±§†îÔğ½½ÁÑ¥½¸øñ½ÁÑ¥½¸ùS…¤­£…´ğ½½ÁÑ¥½¸øñ½ÁÑ¥½¸ù-£…Œğ½½ÁÑ¥½¸øğ½Í•±•Ğøğ½±…‰•°øñ±…‰•°ù¡¤£è¡¼‹…ŒÏ¤ñÑ•áÑ…É•„¹…µ”ô‰¹½Ñ”ˆµ…á1•¹Ñ õìÔÀÁôÁ±…•¡½±‘•Èô‰QÉ§†îÔ£†î¥¹œ°Ñ£†îu¤¥…¸á×†ê•Ğ¡§†î¸¸¸¸ˆ€¼øğ½±…‰•°ùí•ÉÉ½È€˜˜€ñÀ±…ÍÍ9…µ”ô‰™½É´µ•ÉÉ½Èˆùí•ÉÉ½Éôğ½Àùôñ‘¥Ø±…ÍÍ9…µ”ô‰µ½‘…°µ…Ñ¥½¹Ìˆøñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ±…ÍÍ9…µ”ô‰Í•½¹‘…Éäµ‰ÕÑÑ½¸ˆ½¹±¥¬õí½¹±½Í•ôûC†îÍ…Ôğ½‰ÕÑÑ½¸øñ‰ÕÑÑ½¸±…ÍÍ9…µ”ô‰ÁÉ¥µ…Éäµ‰ÕÑÑ½¸Íµ…±°ˆ‘¥Í…‰±•õí‰ÕÍåôùí‰ÕÍä€ü€‹A…¹œŸ†îµ¤¸¸¸ˆ€è€‰†îµ¤ç©Ô†êÔƒG†êİĞ³†î- ‰ôğ½‰ÕÑÑ½¸øğ½‘¥ØøñÍµ…±°±…ÍÍ9…µ”ô‰Í•ÕÉ”µ¹½Ñ”ˆûÂ~RHA£É¹œ­£…´£†î$Ñ£†ê•ä£†îLÏ„†î„‹¤Í…Ô­¡¤‹†ê…¸ƒG†êİĞ³†î- ¸ğ½Íµ…±°øğ½™½É´øğ½5½‘…±M¡•±°øì)ô()™Õ¹Ñ¥½¸A•Ñ½Éµ5½‘…°¡ìÁ•Ğ°½¹±½Í”°½¹MÕ•ÍÌôèìÁ•ĞèA•Ğğ¹Õ±°ì½¹±½Í”è€ ¤€ôøÙ½¥ì½¹MÕ•ÍÌè€ ¤€ôøÙ½¥ô¤ì(€½¹ÍĞm‰ÕÍä°Í•Ñ	ÕÍåt€ôÕÍ•MÑ…Ñ”¡™…±Í”¤ì½¹ÍĞm•ÉÉ½È°Í•ÑÉÉ½Ét€ôÕÍ•MÑ…Ñ” ˆˆ¤ì(€½¹ÍĞÍÕ‰µ¥Ğ€ô…Íå¹Œ€¡•Ù•¹Ğè½ÉµÙ•¹Ğñ!Q51½Éµ±•µ•¹Ğø¤€ôøì(€€€•Ù•¹Ğ¹ÁÉ•Ù•¹Ñ•™…Õ±Ğ ¤ìÍ•Ñ	ÕÍä¡ÑÉÕ”¤ìÍ•ÑÉÉ½È ˆˆ¤ì½¹ÍĞ™½É´€ô¹•Ü½Éµ…Ñ„¡•Ù•¹Ğ¹ÕÉÉ•¹ÑQ…É•Ğ¤ì(€€€ÑÉäì½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ™•Ñ  ˆ½…Á¤½…ÁÀˆ°ìµ•Ñ¡½è€‰A=MPˆ°¡•…‘•ÉÌèì€‰½¹Ñ•¹ĞµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô°‰½‘äè)M=8¹ÍÑÉ¥¹¥™ä¡ì…Ñ¥½¸èÁ•Ğ€ü€‰ÕÁ‘…Ñ•A•Ğˆ€è€‰É•…Ñ•A•Ğˆ°Á•Ñ%èÁ•Ğü¹¥°Á•Ñ9…µ”è™½É´¹•Ğ ‰Á•Ñ9…µ”ˆ¤°ÍÁ•¥•Ìè™½É´¹•Ğ ‰ÍÁ•¥•Ìˆ¤°‰É••è™½É´¹•Ğ ‰‰É••ˆ¤°Í•àè™½É´¹•Ğ ‰Í•àˆ¤°‘…Ñ•=™	¥ÉÑ è™½É´¹•Ğ ‰‘…Ñ•=™	¥ÉÑ ˆ¤°İ•¥¡Ñ-œè9Õµ‰•È¡™½É´¹•Ğ ‰İ•¥¡Ñ-œˆ¤¤°‰±½½‘QåÁ”è™½É´¹•Ğ ‰‰±½½‘QåÁ”ˆ¤°µ¥É½¡¥Àè™½É´¹•Ğ ‰µ¥É½¡¥Àˆ¤°…±±•É¥•Ìè™½É´¹•Ğ ‰…±±•É¥•Ìˆ¤°Á•Ñ9½Ñ•Ìè™½É´¹•Ğ ‰Á•Ñ9½Ñ•Ìˆ¤ô¤ô¤ì½¹ÍĞ‰½‘ä€ô…İ…¥ĞÉ•ÍÁ½¹Í”¹©Í½¸ ¤…Ìì•ÉÉ½ÈüèÍÑÉ¥¹œôì¥˜€ …É•ÍÁ½¹Í”¹½¬¤Ñ¡É½Ü¹•ÜÉÉ½È¡‰½‘ä¹•ÉÉ½È€üü€‰-£Ñ¹œÑ£†î³ÁÔ£†îLÏ„ˆ¤ì½¹MÕ•ÍÌ ¤ìô…Ñ €¡…Õ¡Ğ¤ìÍ•ÑÉÉ½È¡…Õ¡Ğ¥¹ÍÑ…¹•½˜ÉÉ½È€ü…Õ¡Ğ¹µ•ÍÍ…”€è€‰-£Ñ¹œÑ£†î³ÁÔ£†îLÏ„ˆ¤ìô™¥¹…±±äìÍ•Ñ	ÕÍä¡™…±Í”¤ìô(€ôì(€É•ÑÕÉ¸€ñ5½‘…±M¡•±°Ñ¥Ñ±”õíÁ•Ğ€ü£†î%¹ Ï†îµ„£†îLÏ„ƒ
-Ü€‘íÁ•Ğ¹¹…µ•õ€€è€‰Q£©´£†îLÏ„¡¼‹¤‰ô½¹±½Í”õí½¹±½Í•ôøñ™½É´±…ÍÍ9…µ”ô‰‰½½­¥¹œµ™½É´Á•Ğµ™½É´ˆ½¹MÕ‰µ¥ĞõíÍÕ‰µ¥Ñôøñ±…‰•°ùS©¸†î„‹¤ñ¥¹ÁÕĞ¹…µ”ô‰Á•Ñ9…µ”ˆÉ•ÅÕ¥É•µ…á1•¹Ñ õìàÁôÁ±…•¡½±‘•Èô‰Ñ¹œˆ‘•™…Õ±ÑY…±Õ”õíÁ•Ğü¹¹…µ•ô€¼øğ½±…‰•°øñ±…‰•°ù1¿¤ñÍ•±•Ğ¹…µ”ô‰ÍÁ•¥•ÌˆÉ•ÅÕ¥É•‘•™…Õ±ÑY…±Õ”õíÁ•Ğü¹ÍÁ•¥•Ì€üü€‰£Ì‰ôøñ½ÁÑ¥½¸ù£Ìğ½½ÁÑ¥½¸øñ½ÁÑ¥½¸ù7¡¼ğ½½ÁÑ¥½¸øñ½ÁÑ¥½¸ùQ£†î<ğ½½ÁÑ¥½¸øñ½ÁÑ¥½¸ù-£…Œğ½½ÁÑ¥½¸øğ½Í•±•Ğøğ½±…‰•°øñ±…‰•°ù§†îE¹œñ¥¹ÁÕĞ¹…µ”ô‰‰É••ˆÉ•ÅÕ¥É•µ…á1•¹Ñ õìÄÀÁôÁ±…•¡½±‘•Èô‰A½½‘±”Q½äˆ‘•™…Õ±ÑY…±Õ”õíÁ•Ğü¹‰É••‘ô€¼øğ½±…‰•°øñ±…‰•°ù§†îm¤Óµ¹ ñÍ•±•Ğ¹…µ”ô‰Í•àˆÉ•ÅÕ¥É•‘•™…Õ±ÑY…±Õ”õíÁ•Ğü¹Í•à€üü€‹C†îÅŒ‰ôøñ½ÁÑ¥½¸ûC†îÅŒğ½½ÁÑ¥½¸øñ½ÁÑ¥½¸ù…¤ğ½½ÁÑ¥½¸øñ½ÁÑ¥½¸ù£Á„ã…ŒƒG†î-¹ ğ½½ÁÑ¥½¸øğ½Í•±•Ğøğ½±…‰•°øñ±…‰•°ù9ŸäÍ¥¹ ñ¥¹ÁÕĞ¹…µ”ô‰‘…Ñ•=™	¥ÉÑ ˆÑåÁ”ô‰‘…Ñ”ˆµ…àõí¹•Ü…Ñ” ¤¹Ñ½%M=MÑÉ¥¹œ ¤¹Í±¥” À°ÄÀ¥ôÉ•ÅÕ¥É•‘•™…Õ±ÑY…±Õ”õíÁ•Ğü¹‘…Ñ•}½™}‰¥ÉÑ¡ô€¼øğ½±…‰•°øñ±…‰•°ù‰¸»†êİ¹œ€¡­œ¤ñ¥¹ÁÕĞ¹…µ”ô‰İ•¥¡Ñ-œˆÑåÁ”ô‰¹Õµ‰•Èˆµ¥¸ôˆÀ¸Äˆµ…àôˆÈÔÀˆÍÑ•ÀôˆÀ¸ÄˆÉ•ÅÕ¥É•‘•™…Õ±ÑY…±Õ”õíÁ•Ğü¹İ•¥¡Ñ}­ô€¼øğ½±…‰•°øñ±…‰•°ù9£Í´·…Ôñ¥¹ÁÕĞ¹…µ”ô‰‰±½½‘QåÁ”ˆµ…á1•¹Ñ õìĞÁô‘•™…Õ±ÑY…±Õ”õíÁ•Ğü¹‰±½½‘}ÑåÁ”€üü€ˆ‰ôÁ±…•¡½±‘•Èô‰€Ä¸Ä´ˆ€¼øğ½±…‰•°øñ±…‰•°ù5¥É½¡¥Àñ¥¹ÁÕĞ¹…µ”ô‰µ¥É½¡¥Àˆµ…á1•¹Ñ õìàÁô‘•™…Õ±ÑY…±Õ”õíÁ•Ğü¹µ¥É½¡¥À€üü€ˆ‰ô€¼øğ½±…‰•°øñ±…‰•°±…ÍÍ9…µ”ô‰İ¥‘”µ™¥•±ˆù†î,ƒ†î¥¹œñÑ•áÑ…É•„¹…µ”ô‰…±±•É¥•Ìˆµ…á1•¹Ñ õìÌÀÁôÁ±…•¡½±‘•Èô‰Q£†îÅŒÁ£†ê¥´°Ñ¡×†îEŒ°·Ñ¤ÑËÃ†îu¹œ¸¸¸ˆ‘•™…Õ±ÑY…±Õ”õíÁ•Ğü¹…±±•É¥•Íô€¼øğ½±…‰•°øñ±…‰•°±…ÍÍ9…µ”ô‰İ¥‘”µ™¥•±ˆù¡¤£èÉ§©¹œÓÀñÑ•áÑ…É•„¹…µ”ô‰Á•Ñ9½Ñ•Ìˆµ…á1•¹Ñ õìÔÀÁôÁ±…•¡½±‘•Èô‰Sµ¹ … °·Ô³Ñ¹œ°ƒG†êİŒƒE§†î´“†î¹£†êµ¸É„ˆ‘•™…Õ±ÑY…±Õ”õíÁ•Ğü¹¹½Ñ•Íô€¼øğ½±…‰•°ùí•ÉÉ½È€˜˜€ñÀ±…ÍÍ9…µ”ô‰™½É´µ•ÉÉ½Èˆùí•ÉÉ½Éôğ½Àùôñ‘¥Ø±…ÍÍ9…µ”ô‰µ½‘…°µ…Ñ¥½¹Ìˆøñ‰ÕÑÑ½¸ÑåÁ”ô‰‰ÕÑÑ½¸ˆ±…ÍÍ9…µ”ô‰Í•½¹‘…Éäµ‰ÕÑÑ½¸ˆ½¹±¥¬õí½¹±½Í•ôù#†îäğ½‰ÕÑÑ½¸øñ‰ÕÑÑ½¸±…ÍÍ9…µ”ô‰ÁÉ¥µ…Éäµ‰ÕÑÑ½¸Íµ…±°ˆ‘¥Í…‰±•õí‰ÕÍåôùí‰ÕÍä€ü€‹A…¹œ³ÁÔ¸¸¸ˆ€èÁ•Ğ€ü€‰3ÁÔÑ¡…äƒG†îU¤ˆ€è€‰S†ê…¼£†îLÏ„€˜EH‰ôğ½‰ÕÑÑ½¸øğ½‘¥ØøñÍµ…±°±…ÍÍ9…µ”ô‰Í•ÕÉ”µ¹½Ñ”ˆûÂ~RH¡¤£èÉ§©¹œÓÀ­£Ñ¹œá×†ê•Ğ¡§†î¸ÑË©¸Ñ£†êìEHÑ¹œ­¡…¤¸ğ½Íµ…±°øğ½™½É´øğ½5½‘…±M¡•±°øì)ô()™Õ¹Ñ¥½¸…ÉÑÉ…İ•È¡ì±¥¹•Ì°Ñ½Ñ…°°‰ÕÍä°½¹±½Í”°½¹¡…¹”°½¹¡•­½ÕĞôèì±¥¹•ÌèÉÉ…äñìÁÉ½‘ÕĞèAÉ½‘ÕĞìÅÕ…¹Ñ¥Ñäè¹Õµ‰•ÈôøìÑ½Ñ…°è¹Õµ‰•Èì‰ÕÍäè‰½½±•…¸ì½¹±½Í”è€ ¤€ôøÙ½¥ì½¹¡…¹”è€¡¥èÍÑÉ¥¹œ°‘•±Ñ„è¹Õµ‰•È¤€ôøÙ½¥ì½¹¡•­½ÕĞè€ ¤€ôøÙ½¥ô¤ì(€É•ÑÕÉ¸€ñ‘¥Ø±…ÍÍ9…µ”ô‰‘É…İ•Èµ‰…­‘É½Àˆ½¹5½ÕÍ•½İ¸õì¡•Ù•¹Ğ¤€ôøì¥˜€¡•Ù•¹Ğ¹ÕÉÉ•¹ÑQ…É•Ğ€ôôô•Ù•¹Ğ¹Ñ…É•Ğ¤½¹±½Í” ¤ìõôøñ…Í¥‘”±…ÍÍ9…µ”ô‰…ÉĞµ‘É…İ•Èˆøñ‘¥Ø±…ÍÍ9…µ”ô‰µ½‘…°µ¡•…ˆøñ‘¥ØøñÍÁ…¸±…ÍÍ9…µ”ô‰•å•‰É½ÜˆùE×€¡¼‰½ÍÌğ½ÍÁ…¸øñ ÈùSé¤£¹œ†î„‹†ê…¸ğ½ Èøğ½‘¥Øøñ‰ÕÑÑ½¸½¹±¥¬õí½¹±½Í•ôû\ğ½‰ÕÑÑ½¸øğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰…ÉĞµ±¥¹•Ìˆùí±¥¹•Ì¹µ…À ¡ìÁÉ½‘ÕĞ°ÅÕ…¹Ñ¥Ñäô¤€ôø€ñ‘¥Ø±…ÍÍ9…µ”ô‰…ÉĞµ±¥¹”ˆ­•äõíÁÉ½‘ÕĞ¹¥‘ôøñÍÁ…¸±…ÍÍ9…µ”õíÑ½¹”´‘íÁÉ½‘ÕĞ¹Ù¥ÍÕ…±}Ñ½¹•õôùíÁÉ½‘ÕĞ¹Ù¥ÍÕ…±ôğ½ÍÁ…¸øñ‘¥ØøñˆùíÁÉ½‘ÕĞ¹¹…µ•ôğ½ˆøñÍµ…±°ùíµ½¹•ä¡ÁÉ½‘ÕĞ¹ÁÉ¥”¥ôğ½Íµ…±°øñ‘¥Ø±…ÍÍ9…µ”ô‰ÅÕ…¹Ñ¥Ñäˆøñ‰ÕÑÑ½¸½¹±¥¬õì ¤€ôø½¹¡…¹”¡ÁÉ½‘ÕĞ¹¥°€´Ä¥ôûŠ"Hğ½‰ÕÑÑ½¸øñˆùíÅÕ…¹Ñ¥Ñåôğ½ˆøñ‰ÕÑÑ½¸½¹±¥¬õì ¤€ôø½¹¡…¹”¡ÁÉ½‘ÕĞ¹¥°€Ä¥ôø¬ğ½‰ÕÑÑ½¸øğ½‘¥Øøğ½‘¥Øøğ½‘¥Øø¥õì…±¥¹•Ì¹±•¹Ñ €˜˜€ñ‘¥Ø±…ÍÍ9…µ”ô‰•µÁÑäµÍÑ…Ñ”½µÁ…ĞˆøñÍÁ…¸ûÂ~n7¾â<ğ½ÍÁ…¸øñ ÌùSé¤£¹œƒE…¹œÑË†îE¹œğ½ ÌøñÀù£†î5¸Û¤·Í¸‰½ÍÌ·¨¹£¤¸ğ½Àøğ½‘¥Øùôğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰…ÉĞµÍÕµµ…ÉäˆøñÍÁ…¸ùS†ê…´Óµ¹ €ñˆùíµ½¹•ä¡Ñ½Ñ…°¥ôğ½ˆøğ½ÍÁ…¸øñÍÁ…¸ùA£´¥…¼£¹œ€ñˆùíÑ½Ñ…°€øô€ÈääÀÀÀ€ü€‰5§†î¸Á£´ˆ€è€‰Sµ¹ ƒ†î|‹Ã†îmŒÍ…Ô‰ôğ½ˆøğ½ÍÁ…¸øñ¡È¼øñÍÁ…¸±…ÍÍ9…µ”ô‰…ÉĞµÑ½Ñ…°ˆùS†îU¹œ†îe¹œ€ñˆùíµ½¹•ä¡Ñ½Ñ…°¥ôğ½ˆøğ½ÍÁ…¸øñ‰ÕÑÑ½¸±…ÍÍ9…µ”ô‰ÁÉ¥µ…Éäµ‰ÕÑÑ½¸¡•­½ÕĞˆ‘¥Í…‰±•õì…±¥¹•Ì¹±•¹Ñ ñğ‰ÕÍåô½¹±¥¬õí½¹¡•­½ÕÑôùí‰ÕÍä€ü€‹A…¹œÓ†ê…¼ƒG…¸¸¸¸ˆ€è€‰S†ê…¼ƒG…¸€˜Ñ¡…¹ Ñ¿…¸ƒŠH‰ôğ½‰ÕÑÑ½¸øñÍµ…±°ûÂ~RHS†îU¹œÑ§†î¸ƒGÃ†îŒ‰…­•¹Óµ¹ ³†ê…¤Ó†î¬‘…Ñ…‰…Í”ğ½Íµ…±°øğ½‘¥Øøğ½…Í¥‘”øğ½‘¥Øøì)ô()™Õ¹Ñ¥½¸EÉ5½‘…°¡ìÁ•Ğ°½¹±½Í”ôèìÁ•ĞèA•Ğì½¹±½Í”è€ ¤€ôøÙ½¥ô¤ì(€½¹ÍĞmÍÉŒ°Í•ÑMÉt€ôÕÍ•MÑ…Ñ” ˆˆ¤ì(€ÕÍ•™™•Ğ  ¤€ôøìÙ½¥EI½‘”¹Ñ½…Ñ…UI0¡€‘íİ¥¹‘½Ü¹±½…Ñ¥½¸¹½É¥¥¹ô½Á•Ğ¼‘í•¹½‘•UI%½µÁ½¹•¹Ğ¡Á•Ğ¹ÅÉ}Ñ½­•¸¥õ€°ìİ¥‘Ñ è€ÌĞÀ°µ…É¥¸è€È°½±½Èèì‘…É¬è€ˆŒÄÜÈÔÍˆ°±¥¡Ğè€ˆ™™™™™˜ˆô°•ÉÉ½É½ÉÉ•Ñ¥½¹1•Ù•°è€‰ ˆô¤¹Ñ¡•¸¡Í•ÑMÉŒ¤ìô°mÁ•Ğ¹ÅÉ}Ñ½­•¹t¤ì(€É•ÑÕÉ¸€ñ5½‘…±M¡•±°Ñ¥Ñ±”õíEH£†îLÏ„†î„€‘íÁ•Ğ¹¹…µ•õô½¹±½Í”õí½¹±½Í•ô±…ÍÍ9…µ”ô‰ÅÈµµ½‘…°ˆøñ‘¥Ø±…ÍÍ9…µ”ô‰ÅÈµÁ•ĞˆøñÍÁ…¸ùíÁ•Ğ¹…Ù…Ñ…Éôğ½ÍÁ…¸øñ‘¥ØøñˆùíÁ•Ğ¹¹…µ•ôğ½ˆøñÍµ…±°ùíÁ•Ğ¹‰É••‘ôƒ
-ÜíÁ•Ğ¹Í•áôğ½Íµ…±°øğ½‘¥Øøğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰ÅÈµ‰½àˆùíÍÉŒ€ü€ñ¥µœÍÉŒõíÍÉô…±Ğõí7ŒEH·†î|£†îLÏ„…¸Ñ¿¸†î„€‘íÁ•Ğ¹¹…µ•õô€¼ø€è€ñ‘¥Ø±…ÍÍ9…µ”ô‰ÅÈµ±½…‘¥¹œˆûA…¹œÓ†ê…¼EH¸¸¸ğ½‘¥Øùôğ½‘¥ØøñÀùE×¥ĞƒG†îá•´Ñ£†êì­£†ê¥¸†ê•À°Ó±¹ ÑË†ê…¹œÑ§©´Á£É¹œÛ€… ±§©¸£†îÛ†îm¤£†îœ¹×Ñ¤¸5¥É½¡¥ÀƒGÃ†îŒ¡”‹†îmĞƒG†î‹†ê¼Û†îÉ§©¹œÓÀ¸ğ½Àøñ‘¥Ø±…ÍÍ9…µ”ô‰ÁÉ¥Ù…äµÁ¥±°ˆûÂ~RH1§©¸¯†êıĞÉ§©¹œƒ
-ÜÌÑ£†îÑ¡Ô£†îM¤ğ½‘¥Øøğ½5½‘…±M¡•±°øì)ô()™Õ¹Ñ¥½¸¡•­½ÕÑ5½‘…°¡ì½É‘•È°½¹±½Í”°½¹MÕ•ÍÌôèì½É‘•Èè¡•­½ÕÑ=É‘•Èì½¹±½Í”è€ ¤€ôøÙ½¥ì½¹MÕ•ÍÌè€ ¤€ôøÙ½¥ô¤ì(€½¹ÍĞmÍÉŒ°Í•ÑMÉt€ôÕÍ•MÑ…Ñ” ˆˆ¤ì½¹ÍĞm‰ÕÍä°Í•Ñ	ÕÍåt€ôÕÍ•MÑ…Ñ”¡™…±Í”¤ì½¹ÍĞm•ÉÉ½È°Í•ÑÉÉ½Ét€ôÕÍ•MÑ…Ñ” ˆˆ¤ì(€ÕÍ•™™•Ğ  ¤€ôøì½¹ÍĞÁ…å±½…€ôAQIğ‘íAe59Q}=9%¹‰…¹­½‘•õğ‘íAe59Q}=9%¹…½Õ¹Ñ9Õµ‰•È¹É•Á±…” ½qÌ½œ°€ˆˆ¥õğ‘í½É‘•È¹Ñ½Ñ…±õğ‘í½É‘•È¹½É‘•É½‘•õ€ìÙ½¥EI½‘”¹Ñ½…Ñ…UI0¡Á…å±½…°ìİ¥‘Ñ è€ÌÈÀ°µ…É¥¸è€È°½±½Èèì‘…É¬è€ˆŒÄÜÈÔÍˆ°±¥¡Ğè€ˆ™™™™™˜ˆôô¤¹Ñ¡•¸¡Í•ÑMÉŒ¤ìô°m½É‘•È¹½É‘•É½‘”°½É‘•È¹Ñ½Ñ…±t¤ì(€½¹ÍĞÁ…åµ•¹ÑM•¹Ğ€ô…Íå¹Œ€ ¤€ôøìÍ•Ñ	ÕÍä¡ÑÉÕ”¤ìÍ•ÑÉÉ½È ˆˆ¤ìÑÉäì½¹ÍĞÉ•ÍÁ½¹Í”€ô…İ…¥Ğ™•Ñ  ˆ½…Á¤½…ÁÀˆ°ìµ•Ñ¡½è€‰A=MPˆ°¡•…‘•ÉÌèì€‰½¹Ñ•¹ĞµQåÁ”ˆè€‰…ÁÁ±¥…Ñ¥½¸½©Í½¸ˆô°‰½‘äè)M=8¹ÍÑÉ¥¹¥™ä¡ì…Ñ¥½¸è€‰µ…É­=É‘•ÉA…åµ•¹ÑM•¹Ğˆ°½É‘•É%è½É‘•È¹¥ô¤ô¤ì½¹ÍĞ‰½‘ä€ô…İ…¥ĞÉ•ÍÁ½¹Í”¹©Í½¸ ¤…Ìì•ÉÉ½ÈüèÍÑÉ¥¹œôì¥˜€ …É•ÍÁ½¹Í”¹½¬¤Ñ¡É½Ü¹•ÜÉÉ½È¡‰½‘ä¹•ÉÉ½È€üü€‰-£Ñ¹œÑ£†î†êµÀ¹£†êµĞÑ¡…¹ Ñ¿…¸ˆ¤ì½¹MÕ•ÍÌ ¤ìô…Ñ €¡…Õ¡Ğ¤ìÍ•ÑÉÉ½È¡…Õ¡Ğ¥¹ÍÑ…¹•½˜ÉÉ½È€ü…Õ¡Ğ¹µ•ÍÍ…”€è€‰-£Ñ¹œÑ£†î†êµÀ¹£†êµĞÑ¡…¹ Ñ¿…¸ˆ¤ìô™¥¹…±±äìÍ•Ñ	ÕÍä¡™…±Í”¤ìôôì(€É•ÑÕÉ¸€ñ5½‘…±M¡•±°Ñ¥Ñ±”ô‰Q¡…¹ Ñ¿…¸EHˆ½¹±½Í”õí½¹±½Í•ô±…ÍÍ9…µ”ô‰¡•­½ÕĞµµ½‘…°ˆøñ‘¥Ø±…ÍÍ9…µ”ô‰Á…åµ•¹ĞµÑ½Ñ…°ˆøñÍµ…±°ùO†îDÑ§†î¸‘¼‰…­•¹ã…Œ¹£†êµ¸ğ½Íµ…±°øñˆùíµ½¹•ä¡½É‘•È¹Ñ½Ñ…°¥ôğ½ˆøñÍÁ…¸ù7ŒƒG…¸í½É‘•È¹½É‘•É½‘•ôğ½ÍÁ…¸øğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰ÅÈµ‰½àÁ…åµ•¹ĞˆùíÍÉŒ€˜˜€ñ¥µœÍÉŒõíÍÉô…±Ğô‰7ŒEHÑ¡…¹ Ñ¿…¸ƒG…¸£¹œˆ€¼ùôğ½‘¥Øøñ‘¥Ø±…ÍÍ9…µ”ô‰‰…¹¬µ¥¹™¼ˆøñÍÁ…¸ù9Ÿ‰¸£¹œ€ñˆùíAe59Q}=9%¹‰…¹­½‘•ôğ½ˆøğ½ÍÁ…¸øñÍÁ…¸ùO†îDÓ¤­¡¿†ê¸€ñˆùíAe59Q}=9%¹…½Õ¹Ñ9Õµ‰•Éôğ½ˆøğ½ÍÁ…¸øñÍÁ…¸ù£†îœÓ¤­¡¿†ê¸€ñˆùíAe59Q}=9%¹…½Õ¹Ñ9…µ•ôğ½ˆøğ½ÍÁ…¸øğ½‘¥ØøñÀ±…ÍÍ9…µ”ô‰Á…åµ•¹Ğµ¹½Ñ”ˆûC…¸ƒGŒƒGÃ†îŒ³ÁÔÑÉ½¹œ‘…Ñ…‰…Í”¸;éĞ‹©¸“Ã†îm¤£†î$‹…¼ƒŠsGŒ¡Õç†î¸­¡¿†ê»Štì†îµ„£¹œ¡¿†êİŒİ•‰¡½½¬Á£†ê¤ƒG†îE¤Í¿…ĞÑËÃ†îmŒ­¡¤¡Õç†î¸Í…¹œƒGŒÑ¡…¹ Ñ¿…¸¸ğ½Àùí•ÉÉ½È€˜˜€ñÀ±…ÍÍ9…µ”ô‰™½É´µ•ÉÉ½Èˆùí•ÉÉ½Éôğ½Àùôñ‰ÕÑÑ½¸±…ÍÍ9…µ”ô‰ÁÉ¥µ…Éäµ‰ÕÑÑ½¸¡•­½ÕĞˆ‘¥Í…‰±•õí‰ÕÍåô½¹±¥¬õì ¤€ôøÙ½¥Á…åµ•¹ÑM•¹Ğ ¥ôùí‰ÕÍä€ü€‹A…¹œŸ†îµ¤¸¸¸ˆ€è€‰SÑ¤ƒGŒ¡Õç†î¸­¡¿†ê¸ƒŠPŸ†îµ¤ƒG†îE¤Í¿…Ğ‰ôğ½‰ÕÑÑ½¸øğ½5½‘…±M¡•±°øì)ô
+      {petFormOpen && <PetFormModal pet={petFormPet} onClose={() => { setPetFormOpen(false); setPetFormPet(null); }} onSuccess={async () => { setPetFormOpen(false); setPetFormPet(null); setToast(petFormPet ? "ÄÃ£ cáº­p nháº­t há»“ sÆ¡ cá»§a bÃ©." : "ÄÃ£ táº¡o há»“ sÆ¡ má»›i vÃ  cáº¥p QR riÃªng cho bÃ©."); await reload(); }} />}
+      {authPrompt && <ModalShell title="ÄÄƒng nháº­p Ä‘á»ƒ Ä‘áº·t lá»‹ch" onClose={() => setAuthPrompt(false)} className="auth-prompt-modal"><div className="auth-shield">ğŸ”’</div><p>ÄÄƒng nháº­p giÃºp phÃ²ng khÃ¡m nháº­n Ä‘Ãºng há»“ sÆ¡ pet vÃ  ngÄƒn ngÆ°á»i khÃ¡c Ä‘áº·t lá»‹ch thay báº¡n.</p><a className="primary-button small" href={SIGN_IN_PATH}>Tiáº¿p tá»¥c vá»›i Google</a><button className="text-button" onClick={() => setAuthPrompt(false)}>Tiáº¿p tá»¥c xem trÆ°á»›c</button></ModalShell>}
+      {toast && <div className="toast" role="status">{toast}</div>}
+    </div>
+  );
+}
+
+function ShopView({ products, categories, category, setCategory, addToCart, onNearby }: { products: Product[]; categories: string[]; category: string; setCategory: (value: string) => void; addToCart: (id: string) => void; onNearby: () => void }) {
+  const [shop, setShop] = useState("all");
+  const [sort, setSort] = useState("suggested");
+  const shops = [...new Set(products.map(p => p.partner_name).filter((name): name is string => Boolean(name)))];
+  const visibleProducts = products.filter(p => shop === "all" || p.partner_name === shop).sort((a,b) => sort === "low" ? a.price - b.price : sort === "high" ? b.price - a.price : 0);
+  return <>
+    <section className="hero section-wrap">
+      <div className="hero-copy">
+        <span className="eyebrow">Tá»¥i mÃ¬nh chá»n ká»¹, boss mÃª ly</span>
+        <h1 className="petcare-title">PetCare</h1>
+        <p className="hero-tagline">Äáº§y tÃºi quÃ , Ä‘áº§y áº¯p yÃªu thÆ°Æ¡ng. Tá»« bá»¯a Äƒn ngon Ä‘áº¿n chÄƒm sÃ³c sá»©c khá»e, má»i Ä‘iá»u tá»‘t nháº¥t cho bÃ© Ä‘á»u á»Ÿ Ä‘Ã¢y.</p>
+        <div className="hero-actions"><a href="#best-sellers" className="primary-button">Xem gá»£i Ã½ <span>â†’</span></a><button className="text-button" onClick={onNearby}>TÃ¬m thÃº y gáº§n tÃ´i <span>âŒ–</span></button></div>
+        <div className="trust-row"><span>áº¢nh sáº£n pháº©m thá»±c táº¿</span><span>GiÃ¡ tham kháº£o cÃ³ nguá»“n</span></div>
+      </div>
+      <div className="hero-art" aria-label="Miso Ä‘ang vui bÃªn quÃ  táº·ng">
+        <div className="hero-blob"><div className="hero-pet">ğŸ¶</div><span className="spark spark-one">âœ¦</span><span className="spark spark-two">â™¥</span></div>
+        <div className="floating-card float-food"><span>ğŸ¥£</span><div><b>Bá»¯a ngon má»—i ngÃ y</b><small>Äá»§ dinh dÆ°á»¡ng</small></div></div>
+        <div className="floating-card float-care"><span>âœš</span><div><b>ChÄƒm sÃ³c gáº§n báº¡n</b><small>Äáº·t lá»‹ch trong 1 phÃºt</small></div></div>
+      </div>
+    </section>
+
+    <section className="benefit-strip section-wrap"><div><span>â™¢</span><b>áº¢nh thá»±c táº¿</b><small>Xem rÃµ tá»«ng sáº£n pháº©m</small></div><div><span>âš¡</span><b>GiÃ¡ cÃ³ nguá»“n</b><small>Äá»‘i chiáº¿u táº¡i cá»­a hÃ ng</small></div><div><span>â™§</span><b>Chá»n theo tá»«ng bÃ©</b><small>Gá»£i Ã½ Ä‘Ãºng nhu cáº§u</small></div><div><span>â™¡</span><b>ThÃ´ng tin shop</b><small>TÃªn vÃ  Ä‘á»‹a chá»‰ rÃµ rÃ ng</small></div></section>
+
+    <section className="section-wrap product-section" id="best-sellers">
+      <div className="section-heading"><div><span className="eyebrow">KhÃ¡m phÃ¡ theo nhu cáº§u cá»§a bÃ©</span><h2>Gá»£i Ã½ hÃ´m nay</h2></div><span className="catalog-count">{visibleProducts.length} sáº£n pháº©m</span></div>
+      <div className="catalog-notice"><b>KhÃ¡m phÃ¡ sáº£n pháº©m tá»« cÃ¡c shop</b><p>CÃ¡c tháº» â€œTham kháº£oâ€ dÃ¹ng áº£nh tháº­t vÃ  giÃ¡ niÃªm yáº¿t tra ngÃ y 04/10/2026. Shop chÆ°a Ä‘Äƒng bÃ¡n trÃªn PetCare; giÃ¡ cÃ³ thá»ƒ thay Ä‘á»•i vÃ  chÆ°a xÃ¡c nháº­n tá»“n kho tá»«ng chi nhÃ¡nh. Báº¡n cÃ³ thá»ƒ xem giÃ¡ táº¡i nguá»“n, chÆ°a Ä‘áº·t hÃ ng cÃ¡c mÃ³n nÃ y trong á»©ng dá»¥ng.</p></div><div className="category-row">{categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}</button>)}</div>
+      <div className="catalog-toolbar"><label>Cá»­a hÃ ng<select value={shop} onChange={e => setShop(e.target.value)}><option value="all">Táº¥t cáº£ cá»­a hÃ ng</option>{shops.map(name => <option key={name} value={name}>{name}</option>)}</select></label><label>Sáº¯p xáº¿p<select value={sort} onChange={e => setSort(e.target.value)}><option value="suggested">Gá»£i Ã½</option><option value="low">GiÃ¡ tháº¥p Ä‘áº¿n cao</option><option value="high">GiÃ¡ cao Ä‘áº¿n tháº¥p</option></select></label></div><div className="product-grid">{visibleProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={() => addToCart(product.id)} />)}</div>
+      {!visibleProducts.length && <div className="empty-state"><span>âŒ•</span><h3>ChÆ°a tháº¥y mÃ³n phÃ¹ há»£p</h3><p>Thá»­ tá»« khÃ³a hoáº·c nhÃ³m sáº£n pháº©m khÃ¡c nhÃ©.</p></div>}
+    </section>
+
+    <section className="section-wrap care-banner"><div><span className="eyebrow">PetCare 360</span><h2>KhÃ´ng chá»‰ mua sáº¯m.<br/>CÃ²n lÃ  bÃ¬nh an.</h2><p>Xem cÆ¡ sá»Ÿ Ä‘ang má»Ÿ, Ä‘áº·t lá»‹ch vÃ  giá»¯ há»“ sÆ¡ sá»©c khá»e cá»§a bÃ© trong má»™t nÆ¡i.</p><button className="light-button" onClick={onNearby}>KhÃ¡m phÃ¡ gáº§n báº¡n â†’</button></div><div className="care-orbit"><span className="care-pet">ğŸ•</span><i>âœš</i><i>âŒ–</i><i>â™¡</i></div></section>
+  </>;
+}
+
+function SignInGate({ title, text }: { title: string; text: string }) {
+  return <section className="section-wrap account-gate"><span>ğŸ”’</span><h1>{title}</h1><p>{text}</p><a className="primary-button" href={SIGN_IN_PATH}>Tiáº¿p tá»¥c vá»›i Google <span>â†’</span></a><small>ÄÄƒng nháº­p hoáº·c táº¡o tÃ i khoáº£n báº±ng Google. PetCare khÃ´ng lÆ°u máº­t kháº©u Google.</small></section>;
+}
+
+function EmptyPets({ onAdd }: { onAdd: () => void }) {
+  return <section className="section-wrap account-gate"><span>ğŸ¾</span><h1>Táº¡o há»“ sÆ¡ cho bÃ© Ä‘áº§u tiÃªn</h1><p>LÆ°u thÃ´ng tin cÆ¡ báº£n, lá»‹ch tiÃªm vÃ  cáº¥p QR an toÃ n riÃªng cho tá»«ng bÃ©.</p><button className="primary-button" onClick={onAdd}>+ Táº¡o há»“ sÆ¡ pet</button></section>;
+}
+
+function ProductCard({ product, onAdd }: { product: Product; onAdd: () => void }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  return <article className={`product-card marketplace-card ${product.is_sample ? "sample-card" : ""}`}>
+    <div className={`product-visual tone-${product.visual_tone}`}>
+      {product.image_url && !imageFailed ? <img src={product.image_url} alt={product.name} loading="lazy" width={400} height={400} onError={() => setImageFailed(true)} /> : <span>{product.visual}</span>}
+      {product.badge && <b>{product.badge}</b>}
+    </div>
+    <div className="product-info"><small>{product.category}</small><h3>{product.name}</h3>
+      {!product.is_sample && <p>{product.description}</p>}
+      {!product.is_sample && product.sold > 0 && <div className="rating-line"><span>{product.rating > 0 ? `â˜… ${product.rating}` : ""}</span><i>ÄÃ£ bÃ¡n {product.sold}</i></div>}
+      <div className="price-line"><div>{product.is_sample && <small>GiÃ¡ tham kháº£o</small>}<strong>{money(product.price)}</strong>{product.original_price && <del>{money(product.original_price)}</del>}</div>{!product.is_sample && <button onClick={onAdd} aria-label={`ThÃªm ${product.name} vÃ o giá»`}>+</button>}</div>
+      <div className="product-seller"><b>â–£ {product.partner_name || "Cá»­a hÃ ng PetCare"}</b><span>âŒ– {product.partner_address || "Äá»‹a chá»‰ Ä‘ang cáº­p nháº­t"}</span></div>
+      {product.is_sample && <a className="product-source" href={product.source_url} target="_blank" rel="noreferrer">Xem táº¡i shop â†—</a>}
+    </div>
+  </article>;
+}
+
+function PetsView({ data, pet, selectedPetId, onSelectPet, onShowQr, onBook, onAdd, onEdit, onRotateQr }: { data: AppData; pet: Pet; selectedPetId: string; onSelectPet: (id: string) => void; onShowQr: (pet: Pet) => void; onBook: () => void; onAdd: () => void; onEdit: () => void; onRotateQr: () => void }) {
+  const vaccinations = data.vaccinations.filter((item) => item.pet_id === pet.id);
+  const records = data.medicalRecords.filter((item) => item.pet_id === pet.id);
+  const nextVaccine = vaccinations.find((item) => item.status === "overdue") ?? vaccinations.find((item) => item.status === "due") ?? vaccinations[0];
+  const upcomingAppointment = data.appointments.filter((item) => item.pet_id === pet.id && item.status !== "cancelled").sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())[0];
+  const age = Math.max(0, new Date().getFullYear() - new Date(pet.date_of_birth).getFullYear());
+  return <section className="section-wrap pets-page">
+    <div className="pet-page-head"><div><span className="eyebrow">Sá»• sá»©c khá»e Ä‘iá»‡n tá»­</span><h1>Há»“ sÆ¡ cá»§a cÃ¡c bÃ©</h1></div><button className="primary-button small" onClick={onAdd}>+ ThÃªm há»“ sÆ¡</button></div>
+    <div className="pet-selector">{data.pets.map((item) => <button key={item.id} className={selectedPetId === item.id ? "active" : ""} onClick={() => onSelectPet(item.id)}><span>{item.avatar}</span><b>{item.name}</b><small>{item.breed}</small></button>)}<button className="add-pet" onClick={onAdd}><span>+</span><b>ThÃªm bÃ©</b></button></div>
+    <div className="pet-dashboard">
+      <aside className="pet-profile-card"><div className="pet-avatar-large">{pet.avatar}<i>âœ“</i></div><h2>{pet.name}</h2><p>{pet.breed} Â· {pet.sex}</p><div className="pet-stats"><div><b>{age}</b><small>Tuá»•i</small></div><div><b>{pet.weight_kg}</b><small>Kg</small></div><div><b>{pet.blood_type ?? "â€”"}</b><small>NhÃ³m mÃ¡u</small></div></div><div className="info-list"><span><i>âŒ</i><b>Microchip</b><em>{pet.microchip ?? "ChÆ°a cÃ³"}</em></span><span><i>!</i><b>Dá»‹ á»©ng</b><em>{pet.allergies || "KhÃ´ng ghi nháº­n"}</em></span><span><i>â™¡</i><b>Ghi chÃº</b><em>{pet.notes}</em></span></div><div className="pet-profile-actions"><button className="secondary-button" onClick={onEdit}>Chá»‰nh sá»­a há»“ sÆ¡</button><button className="qr-button" onClick={() => onShowQr(pet)}>â–¦ Hiá»‡n QR há»“ sÆ¡</button><button className="pet-rotate-qr" onClick={onRotateQr}>Thu há»“i & táº¡o QR má»›i</button></div><small className="privacy-note">QR chá»‰ chia sáº» thÃ´ng tin an toÃ n khi kháº©n cáº¥p</small></aside>
+      <div className="health-content">
+        <div className="health-summary">
+          <div><span className="summary-icon mint">âœ“</span><p><small>TÃ¬nh tráº¡ng sá»©c khá»e</small><b>{records[0]?.diagnosis ?? "á»”n Ä‘á»‹nh"}</b><em>{records[0] ? `Cáº­p nháº­t ${dateText(records[0].visited_at)}` : "ChÆ°a cÃ³ cáº£nh bÃ¡o má»›i"}</em></p></div>
+          <div className={nextVaccine?.status === "overdue" ? "urgent" : ""}><span className={`summary-icon ${nextVaccine?.status === "overdue" ? "danger" : "peach"}`}>â™¢</span><p><small>{nextVaccine?.status === "overdue" ? "Vaccine cáº§n chÃº Ã½" : "MÅ©i sáº¯p tá»›i"}</small><b>{nextVaccine?.vaccine_name ?? "ChÆ°a cÃ³ lá»‹ch tiÃªm"}</b><em>{nextVaccine?.next_due_at ? `Háº¡n ${dateText(nextVaccine.next_due_at)}` : "ThÃªm há»“ sÆ¡ tiÃªm Ä‘á»ƒ theo dÃµi"}</em></p></div>
+          <div><span className="summary-icon blue">â–£</span><p><small>Lá»‹ch khÃ¡m gáº§n nháº¥t</small><b>{upcomingAppointment ? formatVietnamTime(upcomingAppointment.scheduled_at) : "ChÆ°a cÃ³ lá»‹ch"}</b><em>{upcomingAppointment ? `${dateText(upcomingAppointment.scheduled_at)} Â· ${upcomingAppointment.partner_name}` : "Äáº·t lá»‹ch vá»›i cÆ¡ sá»Ÿ gáº§n báº¡n"}</em></p></div>
+          <button onClick={onBook}>Äáº·t lá»‹ch tÃ¡i khÃ¡m â†’</button>
+        </div>
+        <section className="record-panel"><div className="panel-heading"><div><h2>Lá»‹ch sá»­ tiÃªm phÃ²ng</h2><p>ThÃ´ng tin Ä‘Æ°á»£c xÃ¡c nháº­n bá»Ÿi cÆ¡ sá»Ÿ thÃº y</p></div><span className="verified-label">âœ“ ÄÃ£ xÃ¡c thá»±c</span></div><div className="timeline">{vaccinations.map((item) => <div className="timeline-row" key={item.id}><span className={item.status}/><div><b>{item.vaccine_name}</b><small>{item.dose} Â· LÃ´ {item.batch_number}</small></div><p><b>{dateText(item.administered_at)}</b><small>{item.provider_name}</small></p><em className={`vaccine-status ${item.status}`}>{item.status === "completed" ? "ÄÃ£ tiÃªm" : item.status === "due" ? "Sáº¯p Ä‘áº¿n háº¡n" : "QuÃ¡ háº¡n"}</em></div>)}</div></section>
+        <section className="record-panel"><div className="panel-heading"><div><h2>Lá»‹ch sá»­ khÃ¡m bá»‡nh</h2><p>Tá»± Ä‘á»™ng cáº­p nháº­t sau má»—i láº§n khÃ¡m</p></div></div>{records.map((record) => <article className="medical-card" key={record.id}><div className="medical-date"><b>{new Date(record.visited_at).getDate()}</b><span>THG {new Date(record.visited_at).getMonth() + 1}</span></div><div><h3>{record.diagnosis}</h3><p>{record.treatment}</p><div className="medical-meta"><span>âœš {record.partner_name}</span><span>â™™ {record.clinician}</span></div>{record.prescription && <small><b>ÄÆ¡n thuá»‘c:</b> {record.prescription}</small>}</div><button aria-label="Xem chi tiáº¿t há»“ sÆ¡">â€º</button></article>)}</section>
+      </div>
+    </div>
+  </section>;
+}
+
+function AppointmentsView({ data, onFindVet }: { data: AppData; onFindVet: () => void }) {
+  return <section className="section-wrap appointments-page"><div className="pet-page-head"><div><span className="eyebrow">Theo dÃµi tá»« lÃºc gá»­i Ä‘áº¿n khi khÃ¡m</span><h1>Lá»‹ch khÃ¡m cá»§a bÃ©</h1></div><button className="primary-button small" onClick={onFindVet}>+ Äáº·t lá»‹ch má»›i</button></div><div className="appointment-grid">{data.appointments.map((item) => { const when = getVietnamDateParts(item.scheduled_at); return <article className="appointment-card" key={item.id}><div className="appointment-date"><b>{when?.day ?? "â€”"}</b><span>ThÃ¡ng {when?.month ?? "â€”"}</span><small>{formatVietnamTime(item.scheduled_at)}</small></div><div className="appointment-content"><div><span className={`appointment-status ${item.status}`}>{item.status === "pending" ? "Chá» duyá»‡t" : item.status === "confirmed" ? "ÄÃ£ xÃ¡c nháº­n" : item.status === "completed" ? "ÄÃ£ khÃ¡m" : "ÄÃ£ há»§y"}</span><h2>{item.reason}</h2><p>{item.partner_name}</p></div><div className="appointment-pet"><span>{data.pets.find((pet) => pet.id === item.pet_id)?.avatar ?? "ğŸ¾"}</span><p><b>{item.pet_name}</b><small>{item.note}</small></p></div><div className="appointment-actions"><button className="secondary-button">Xem chi tiáº¿t</button><a className="text-button" href={`tel:${data.partners.find((partner) => partner.id === item.partner_id)?.phone ?? ""}`}>Gá»i phÃ²ng khÃ¡m</a></div></div></article>; })}{!data.appointments.length && <div className="empty-state"><span>â–£</span><h3>ChÆ°a cÃ³ lá»‹ch khÃ¡m</h3><p>TÃ¬m cÆ¡ sá»Ÿ Ä‘ang má»Ÿ vÃ  chá»n giá» phÃ¹ há»£p cho bÃ©.</p><button className="primary-button small" onClick={onFindVet}>TÃ¬m thÃº y gáº§n tÃ´i</button></div>}</div></section>;
+}
+
+function OrdersView({ orders, onShop }: { orders: Order[]; onShop: () => void }) {
+  const labels: Record<Order["status"], string> = { pending_payment: "Chá» thanh toÃ¡n", payment_review: "Chá» Ä‘á»‘i soÃ¡t", paid: "ÄÃ£ thanh toÃ¡n", cancelled: "ÄÃ£ há»§y", fulfilled: "ÄÃ£ hoÃ n táº¥t" };
+  return <section className="section-wrap orders-page"><div className="pet-page-head"><div><span className="eyebrow">Theo dÃµi thanh toÃ¡n vÃ  giao hÃ ng</span><h1>ÄÆ¡n hÃ ng cá»§a tÃ´i</h1></div><button className="primary-button small" onClick={onShop}>Tiáº¿p tá»¥c mua sáº¯m</button></div><div className="customer-orders">{orders.map((order) => <article key={order.id}><header><div><small>MÃ£ Ä‘Æ¡n</small><b>{order.order_code}</b></div><span className={`order-status ${order.status}`}>{labels[order.status]}</span></header><p>{order.partner_name}</p><div className="order-lines">{order.items?.map((item) => <span key={item.id}><b>{item.product_name}</b><em>{item.quantity} Ã— {money(item.unit_price)}</em></span>)}</div><footer><small>{dateTimeText(order.created_at)}</small><strong>{money(order.total_amount)}</strong></footer></article>)}{!orders.length && <div className="empty-state"><span>â—‡</span><h3>ChÆ°a cÃ³ Ä‘Æ¡n hÃ ng</h3><p>Sáº£n pháº©m báº¡n mua sáº½ Ä‘Æ°á»£c lÆ°u vÃ  Ä‘á»“ng bá»™ vá»›i cá»­a hÃ ng táº¡i Ä‘Ã¢y.</p><button className="primary-button small" onClick={onShop}>KhÃ¡m phÃ¡ cá»­a hÃ ng</button></div>}</div></section>;
+}
+
+function ModalShell({ title, onClose, children, className = "" }: { title: string; onClose: () => void; children: React.ReactNode; className?: string }) {
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}><div className={`modal-card ${className}`} role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><h2>{title}</h2><button onClick={onClose} aria-label="ÄÃ³ng">Ã—</button></div>{children}</div></div>;
+}
+
+function BookingModal({ partner, pets, onClose, onSuccess }: { partner: Partner; pets: Pet[]; onClose: () => void; onSuccess: () => void }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  const [minimumDateTime] = useState(() => new Date(Date.now() + 3600000).toISOString().slice(0, 16));
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setError("");
+    const form = new FormData(event.currentTarget); const scheduled = String(form.get("scheduledAt") ?? "");
+    try { const response = await fetch("/api/app", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "createAppointment", partnerId: partner.id, petId: form.get("petId"), scheduledAt: new Date(scheduled).toISOString(), reason: form.get("reason"), note: form.get("note") }) }); const body = await response.json() as { error?: string }; if (!response.ok) throw new Error(body.error ?? "KhÃ´ng thá»ƒ Ä‘áº·t lá»‹ch"); onSuccess(); } catch (caught) { setError(caught instanceof Error ? caught.message : "KhÃ´ng thá»ƒ Ä‘áº·t lá»‹ch"); } finally { setBusy(false); }
+  };
+  return <ModalShell title="Äáº·t lá»‹ch khÃ¡m" onClose={onClose}><div className="booking-clinic"><span>âœš</span><div><b>{partner.name}</b><small>{partner.address}</small></div><em>Äang nháº­n lá»‹ch</em></div><form className="booking-form" onSubmit={submit}><label>BÃ© cáº§n khÃ¡m<select name="petId" required>{pets.map((pet) => <option key={pet.id} value={pet.id}>{pet.name} Â· {pet.breed}</option>)}</select></label><label>NgÃ y vÃ  giá»<input name="scheduledAt" type="datetime-local" min={minimumDateTime} required /></label><label>LÃ½ do khÃ¡m<select name="reason" required><option>KhÃ¡m tá»•ng quÃ¡t</option><option>TiÃªm phÃ²ng</option><option>KhÃ¡m da liá»…u</option><option>TÃ¡i khÃ¡m</option><option>KhÃ¡c</option></select></label><label>Ghi chÃº cho bÃ¡c sÄ©<textarea name="note" maxLength={500} placeholder="Triá»‡u chá»©ng, thá»i gian xuáº¥t hiá»‡n..." /></label>{error && <p className="form-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Äá»ƒ sau</button><button className="primary-button small" disabled={busy}>{busy ? "Äang gá»­i..." : "Gá»­i yÃªu cáº§u Ä‘áº·t lá»‹ch"}</button></div><small className="secure-note">ğŸ”’ PhÃ²ng khÃ¡m chá»‰ tháº¥y há»“ sÆ¡ cá»§a bÃ© sau khi báº¡n Ä‘áº·t lá»‹ch.</small></form></ModalShell>;
+}
+
+function PetFormModal({ pet, onClose, onSuccess }: { pet: Pet | null; onClose: () => void; onSuccess: () => void }) {
+  const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setError(""); const form = new FormData(event.currentTarget);
+    try { const response = await fetch("/api/app", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: pet ? "updatePet" : "createPet", petId: pet?.id, petName: form.get("petName"), species: form.get("species"), breed: form.get("breed"), sex: form.get("sex"), dateOfBirth: form.get("dateOfBirth"), weightKg: Number(form.get("weightKg")), bloodType: form.get("bloodType"), microchip: form.get("microchip"), allergies: form.get("allergies"), petNotes: form.get("petNotes") }) }); const body = await response.json() as { error?: string }; if (!response.ok) throw new Error(body.error ?? "KhÃ´ng thá»ƒ lÆ°u há»“ sÆ¡"); onSuccess(); } catch (caught) { setError(caught instanceof Error ? caught.message : "KhÃ´ng thá»ƒ lÆ°u há»“ sÆ¡"); } finally { setBusy(false); }
+  };
+  return <ModalShell title={pet ? `Chá»‰nh sá»­a há»“ sÆ¡ Â· ${pet.name}` : "ThÃªm há»“ sÆ¡ cho bÃ©"} onClose={onClose}><form className="booking-form pet-form" onSubmit={submit}><label>TÃªn cá»§a bÃ©<input name="petName" required maxLength={80} placeholder="BÃ´ng" defaultValue={pet?.name} /></label><label>LoÃ i<select name="species" required defaultValue={pet?.species ?? "ChÃ³"}><option>ChÃ³</option><option>MÃ¨o</option><option>Thá»</option><option>KhÃ¡c</option></select></label><label>Giá»‘ng<input name="breed" required maxLength={100} placeholder="Poodle Toy" defaultValue={pet?.breed} /></label><label>Giá»›i tÃ­nh<select name="sex" required defaultValue={pet?.sex ?? "Äá»±c"}><option>Äá»±c</option><option>CÃ¡i</option><option>ChÆ°a xÃ¡c Ä‘á»‹nh</option></select></label><label>NgÃ y sinh<input name="dateOfBirth" type="date" max={new Date().toISOString().slice(0,10)} required defaultValue={pet?.date_of_birth} /></label><label>CÃ¢n náº·ng (kg)<input name="weightKg" type="number" min="0.1" max="250" step="0.1" required defaultValue={pet?.weight_kg} /></label><label>NhÃ³m mÃ¡u<input name="bloodType" maxLength={40} defaultValue={pet?.blood_type ?? ""} placeholder="DEA 1.1-" /></label><label>Microchip<input name="microchip" maxLength={80} defaultValue={pet?.microchip ?? ""} /></label><label className="wide-field">Dá»‹ á»©ng<textarea name="allergies" maxLength={300} placeholder="Thá»±c pháº©m, thuá»‘c, mÃ´i trÆ°á»ng..." defaultValue={pet?.allergies} /></label><label className="wide-field">Ghi chÃº riÃªng tÆ°<textarea name="petNotes" maxLength={500} placeholder="TÃ­nh cÃ¡ch, mÃ u lÃ´ng, Ä‘áº·c Ä‘iá»ƒm dá»… nháº­n ra" defaultValue={pet?.notes} /></label>{error && <p className="form-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Há»§y</button><button className="primary-button small" disabled={busy}>{busy ? "Äang lÆ°u..." : pet ? "LÆ°u thay Ä‘á»•i" : "Táº¡o há»“ sÆ¡ & QR"}</button></div><small className="secure-note">ğŸ”’ Ghi chÃº riÃªng tÆ° khÃ´ng xuáº¥t hiá»‡n trÃªn tháº» QR cÃ´ng khai.</small></form></ModalShell>;
+}
+
+function CartDrawer({ lines, total, busy, onClose, onChange, onCheckout }: { lines: Array<{ product: Product; quantity: number }>; total: number; busy: boolean; onClose: () => void; onChange: (id: string, delta: number) => void; onCheckout: () => void }) {
+  return <div className="drawer-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}><aside className="cart-drawer"><div className="modal-head"><div><span className="eyebrow">QuÃ  cho boss</span><h2>TÃºi hÃ ng cá»§a báº¡n</h2></div><button onClick={onClose}>Ã—</button></div><div className="cart-lines">{lines.map(({ product, quantity }) => <div className="cart-line" key={product.id}><span className={`tone-${product.visual_tone}`}>{product.visual}</span><div><b>{product.name}</b><small>{money(product.price)}</small><div className="quantity"><button onClick={() => onChange(product.id, -1)}>âˆ’</button><b>{quantity}</b><button onClick={() => onChange(product.id, 1)}>+</button></div></div></div>)}{!lines.length && <div className="empty-state compact"><span>ğŸ›ï¸</span><h3>TÃºi hÃ ng Ä‘ang trá»‘ng</h3><p>Chá»n vÃ i mÃ³n boss mÃª nhÃ©.</p></div>}</div><div className="cart-summary"><span>Táº¡m tÃ­nh <b>{money(total)}</b></span><span>PhÃ­ giao hÃ ng <b>{total >= 299000 ? "Miá»…n phÃ­" : "TÃ­nh á»Ÿ bÆ°á»›c sau"}</b></span><hr/><span className="cart-total">Tá»•ng cá»™ng <b>{money(total)}</b></span><button className="primary-button checkout" disabled={!lines.length || busy} onClick={onCheckout}>{busy ? "Äang táº¡o Ä‘Æ¡n..." : "Táº¡o Ä‘Æ¡n & thanh toÃ¡n â†’"}</button><small>ğŸ”’ Tá»•ng tiá»n Ä‘Æ°á»£c backend tÃ­nh láº¡i tá»« database</small></div></aside></div>;
+}
+
+function QrModal({ pet, onClose }: { pet: Pet; onClose: () => void }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => { void QRCode.toDataURL(`${window.location.origin}/pet/${encodeURIComponent(pet.qr_token)}`, { width: 340, margin: 2, color: { dark: "#17253d", light: "#ffffff" }, errorCorrectionLevel: "H" }).then(setSrc); }, [pet.qr_token]);
+  return <ModalShell title={`QR há»“ sÆ¡ cá»§a ${pet.name}`} onClose={onClose} className="qr-modal"><div className="qr-pet"><span>{pet.avatar}</span><div><b>{pet.name}</b><small>{pet.breed} Â· {pet.sex}</small></div></div><div className="qr-box">{src ? <img src={src} alt={`MÃ£ QR má»Ÿ há»“ sÆ¡ an toÃ n cá»§a ${pet.name}`} /> : <div className="qr-loading">Äang táº¡o QR...</div>}</div><p>QuÃ©t Ä‘á»ƒ xem tháº» kháº©n cáº¥p, tÃ¬nh tráº¡ng tiÃªm phÃ²ng vÃ  cÃ¡ch liÃªn há»‡ vá»›i chá»§ nuÃ´i. Microchip Ä‘Æ°á»£c che bá»›t Ä‘á»ƒ báº£o vá»‡ riÃªng tÆ°.</p><div className="privacy-pill">ğŸ”’ LiÃªn káº¿t riÃªng Â· CÃ³ thá»ƒ thu há»“i</div></ModalShell>;
+}
+
+function CheckoutModal({ order, onClose, onSuccess }: { order: CheckoutOrder; onClose: () => void; onSuccess: () => void }) {
+  const [src, setSrc] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  useEffect(() => { const payload = `PETCARE|${PAYMENT_CONFIG.bankCode}|${PAYMENT_CONFIG.accountNumber.replace(/\s/g, "")}|${order.total}|${order.orderCode}`; void QRCode.toDataURL(payload, { width: 320, margin: 2, color: { dark: "#17253d", light: "#ffffff" } }).then(setSrc); }, [order.orderCode, order.total]);
+  const paymentSent = async () => { setBusy(true); setError(""); try { const response = await fetch("/api/app", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "markOrderPaymentSent", orderId: order.id }) }); const body = await response.json() as { error?: string }; if (!response.ok) throw new Error(body.error ?? "KhÃ´ng thá»ƒ cáº­p nháº­t thanh toÃ¡n"); onSuccess(); } catch (caught) { setError(caught instanceof Error ? caught.message : "KhÃ´ng thá»ƒ cáº­p nháº­t thanh toÃ¡n"); } finally { setBusy(false); } };
+  return <ModalShell title="Thanh toÃ¡n QR" onClose={onClose} className="checkout-modal"><div className="payment-total"><small>Sá»‘ tiá»n do backend xÃ¡c nháº­n</small><b>{money(order.total)}</b><span>MÃ£ Ä‘Æ¡n {order.orderCode}</span></div><div className="qr-box payment">{src && <img src={src} alt="MÃ£ QR thanh toÃ¡n Ä‘Æ¡n hÃ ng" />}</div><div className="bank-info"><span>NgÃ¢n hÃ ng <b>{PAYMENT_CONFIG.bankCode}</b></span><span>Sá»‘ tÃ i khoáº£n <b>{PAYMENT_CONFIG.accountNumber}</b></span><span>Chá»§ tÃ i khoáº£n <b>{PAYMENT_CONFIG.accountName}</b></span></div><p className="payment-note">ÄÆ¡n Ä‘Ã£ Ä‘Æ°á»£c lÆ°u trong database. NÃºt bÃªn dÆ°á»›i chá»‰ bÃ¡o â€œÄ‘Ã£ chuyá»ƒn khoáº£nâ€; cá»­a hÃ ng hoáº·c webhook pháº£i Ä‘á»‘i soÃ¡t trÆ°á»›c khi chuyá»ƒn sang Ä‘Ã£ thanh toÃ¡n.</p>{error && <p className="form-error">{error}</p>}<button className="primary-button checkout" disabled={busy} onClick={() => void paymentSent()}>{busy ? "Äang gá»­i..." : "TÃ´i Ä‘Ã£ chuyá»ƒn khoáº£n â€” gá»­i Ä‘á»‘i soÃ¡t"}</button></ModalShell>;
+}
+
