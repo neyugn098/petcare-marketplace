@@ -8,7 +8,7 @@ import { catalogProducts } from "./catalog";
 import NearbyView from "./nearby-view";
 import { BRAND, FALLBACK_DATA, PAYMENT_CONFIG } from "./config";
 import { formatVietnamDate, formatVietnamDateTime, formatVietnamTime, formatVnd, getVietnamDateParts } from "./format";
-import type { AppData, Order, Partner, Pet, Product } from "./types";
+import type { AppData, Appointment, MedicalRecord, Order, Partner, Pet, Product } from "./types";
 
 type View = "shop" | "nearby" | "pets" | "appointments" | "orders";
 type CheckoutOrder = { id: string; orderCode: string; total: number; status: string };
@@ -33,6 +33,9 @@ const CATEGORY_CARDS = [
   { id: "Đồ chơi", icon: "🧸", title: "Đồ chơi", text: "Giải trí, vận động, giảm stress" },
 ];
 const productInCategory = (product: Product, selected: string) => selected === "Tất cả" || (CATEGORY_FILTERS[selected] ?? [selected]).includes(product.category);
+// Backend rejects lines above 99 or above remaining stock.
+const maxCartQuantity = (product: Product) => Math.max(0, Math.min(product.stock, 99));
+const APPOINTMENT_STATUS: Record<Appointment["status"], string> = { pending: "Chờ duyệt", confirmed: "Đã xác nhận", completed: "Đã khám", cancelled: "Đã hủy" };
 
 function mergeData(payload: Partial<AppData>): AppData {
   return {
@@ -71,6 +74,11 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
   const [petFormPet, setPetFormPet] = useState<Pet | null>(null);
   const [authPrompt, setAuthPrompt] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [detailAppointment, setDetailAppointment] = useState<Appointment | null>(null);
+  const [detailRecord, setDetailRecord] = useState<MedicalRecord | null>(null);
   const [toast, setToast] = useState("");
 
   const reload = async () => {
@@ -92,7 +100,6 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
 
   const effectiveSelectedPetId = data.pets.some((pet) => pet.id === selectedPetId) ? selectedPetId : (data.pets[0]?.id ?? "");
   const selectedPet = data.pets.find((pet) => pet.id === effectiveSelectedPetId) ?? data.pets[0];
-  const categories = Object.keys(CATEGORY_FILTERS);
   const filteredProducts = useMemo(() => catalogProducts(data.products).filter((product) => {
     const needle = normalizeSearch(search);
     const matchesCategory = Boolean(needle) || productInCategory(product, category);
@@ -110,18 +117,80 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const addToCart = (id: string) => {
+  const addToCart = (id: string, quantity = 1) => {
     const product = data.products.find(p => p.id === id);
-    if (!product || product.is_sample || !product.active || product.stock < 1) return;
-    setCart((current) => ({ ...current, [id]: (current[id] ?? 0) + 1 }));
+    if (!product || product.is_sample || !product.active || product.stock < 1) return false;
+    const current = cart[id] ?? 0;
+    const next = Math.min(current + quantity, maxCartQuantity(product));
+    if (next <= current) { setToast("Giỏ hàng đã có toàn bộ số lượng còn trong kho."); return false; }
+    setCart((items) => ({ ...items, [id]: next }));
     setToast("Đã thêm vào giỏ — boss sắp có quà rồi! 🐾");
+    return true;
   };
+
+  const changeCartQuantity = (id: string, delta: number) => setCart((current) => {
+    const product = data.products.find((item) => item.id === id);
+    const next = Math.min((current[id] ?? 0) + delta, product ? maxCartQuantity(product) : 0);
+    if (next > 0) return { ...current, [id]: next };
+    const rest = { ...current };
+    delete rest[id];
+    return rest;
+  });
+
+  const removeFromCart = (id: string) => setCart((current) => {
+    const rest = { ...current };
+    delete rest[id];
+    return rest;
+  });
+
+  const scrollToProducts = () => window.requestAnimationFrame(() => document.getElementById("best-sellers")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+
+  const closeSearch = () => { setSearchOpen(false); setActiveSuggestion(-1); };
 
   const selectSearchProduct = (product: Product) => {
     setSearch(product.name);
     setCategory("Tất cả");
     setView("shop");
-    window.requestAnimationFrame(() => document.getElementById("best-sellers")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    closeSearch();
+    scrollToProducts();
+  };
+
+  const showSearchResults = () => {
+    setCategory("Tất cả");
+    setView("shop");
+    closeSearch();
+    scrollToProducts();
+  };
+
+  const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") { closeSearch(); return; }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (!searchSuggestions.length) return;
+      event.preventDefault();
+      setSearchOpen(true);
+      const last = searchSuggestions.length - 1;
+      const down = event.key === "ArrowDown";
+      // -1 means focus stays on the typed query; arrows wrap through it.
+      setActiveSuggestion((index) => down ? (index >= last ? -1 : index + 1) : (index <= -1 ? last : index - 1));
+      return;
+    }
+    if (event.key === "Enter" && normalizeSearch(search)) {
+      event.preventDefault();
+      const highlighted = searchSuggestions[activeSuggestion];
+      if (highlighted) selectSearchProduct(highlighted); else showSearchResults();
+    }
+  };
+
+  const buyNow = (id: string, quantity: number) => {
+    addToCart(id, quantity);
+    setDetailProduct(null);
+    setCartOpen(true);
+  };
+
+  const viewShopNearby = () => {
+    setDetailProduct(null);
+    setNearbyType("shop");
+    navigate("nearby");
   };
 
   const requestBooking = (partner: Partner) => {
@@ -164,10 +233,12 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
 
   const actorInitials = data.actor?.fullName.split(/\s+/).filter(Boolean).slice(-2).map((part) => part[0]?.toUpperCase()).join("") || "TK";
   const openCategory = (id: string) => {
-    setCategory(id);
-    setView("shop");
-    window.requestAnimationFrame(() => document.getElementById("best-sellers")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    // Search overrides the category filter, so picking a category clears it.
+    setSearch("");
+    setCategory(category === id && !normalizeSearch(search) ? "Tất cả" : id);
+    scrollToProducts();
   };
+  const showSuggestions = searchOpen && Boolean(normalizeSearch(search));
 
   return (
     <div className="site-shell">
@@ -176,11 +247,10 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
         <button className="brand" onClick={() => navigate("shop")} aria-label="Về trang mua sắm">
           <span className="brand-mark">P</span><span>{BRAND.name}</span><i>care & shop</i>
         </button>
-        <div className="global-search">
+        <div className="global-search" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) closeSearch(); }}>
           <span>⌕</span>
-          <input value={search} onChange={(event) => { setSearch(event.target.value); if (event.target.value.trim()) setCategory("Tất cả"); }} onFocus={() => setView("shop")} onKeyDown={(event) => { if (event.key === "Enter" && searchSuggestions[0]) selectSearchProduct(searchSuggestions[0]); }} placeholder="Tìm thức ăn, đồ chơi, phụ kiện..." aria-label="Tìm sản phẩm" aria-controls="search-suggestions" autoComplete="off" />
-          <kbd>⌘ K</kbd>
-          {normalizeSearch(search) && <div className="search-suggestions" id="search-suggestions" role="listbox" aria-label="Gợi ý sản phẩm">{searchSuggestions.map((product) => <button key={product.id} role="option" aria-selected="false" onMouseDown={(event) => event.preventDefault()} onClick={() => selectSearchProduct(product)}><span>{product.visual}</span><p><b>{product.name}</b><small>{product.category} · {money(product.price)}</small></p></button>)}{!searchSuggestions.length && <p className="search-no-result">Không tìm thấy sản phẩm phù hợp.</p>}</div>}
+          <input value={search} onChange={(event) => { setSearch(event.target.value); setSearchOpen(true); setActiveSuggestion(-1); if (event.target.value.trim()) setCategory("Tất cả"); }} onFocus={() => setSearchOpen(true)} onKeyDown={onSearchKeyDown} placeholder="Tìm thức ăn, đồ chơi, phụ kiện..." aria-label="Tìm sản phẩm" role="combobox" aria-autocomplete="list" aria-expanded={showSuggestions} aria-controls="search-suggestions" aria-activedescendant={showSuggestions && activeSuggestion >= 0 ? `search-option-${activeSuggestion}` : undefined} autoComplete="off" />
+          {showSuggestions && <div className="search-suggestions" id="search-suggestions" role="listbox" aria-label="Gợi ý sản phẩm">{searchSuggestions.map((product, index) => <button key={product.id} id={`search-option-${index}`} className={index === activeSuggestion ? "active" : ""} role="option" aria-selected={index === activeSuggestion} tabIndex={-1} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setActiveSuggestion(index)} onClick={() => selectSearchProduct(product)}><ProductThumb product={product} /><p><b>{product.name}</b><small>{product.category} · {money(product.price)}</small></p></button>)}{!searchSuggestions.length && <p className="search-no-result">Không tìm thấy sản phẩm phù hợp.</p>}</div>}
         </div>
         <nav className="desktop-nav" aria-label="Điều hướng chính">
           <button className={view === "nearby" ? "active" : ""} onClick={() => navigate("nearby")}>Gần bạn</button>
@@ -189,24 +259,16 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
         </nav>
         <div className="header-actions">
           <a className="partner-link" href="/partner">Dành cho đối tác</a>
-          <button className="icon-button" onClick={() => navigate("appointments")} aria-label="Lịch khám">♡</button>
           <button className="cart-button" onClick={() => setCartOpen(true)} aria-label={`Giỏ hàng có ${cartCount} sản phẩm`}>Túi <b>{cartCount}</b></button>
-          {data.actor ? <div className="account-session"><button className="avatar-button" aria-label="Mở thông tin phiên đăng nhập" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{actorInitials}</button>{accountOpen && <div className="account-menu"><b>{data.actor.fullName}</b><small>{data.actor.email}</small><span>🔒 {data.actor.isDemo ? "Phiên demo cục bộ" : "Tài khoản PetCare đã đồng bộ"}</span><button onClick={() => { setAccountOpen(false); navigate("orders"); }}>Đơn hàng của tôi</button>{data.actor.isDemo ? <button onClick={() => setAccountOpen(false)}>Đóng</button> : <form action={SIGN_OUT_PATH} method="post"><button type="submit">Đăng xuất</button></form>}</div>}</div> : <div className="guest-auth"><a className="account-login" href={SIGN_IN_PATH}>Đăng nhập</a><a className="account-register" href={SIGN_IN_PATH}>Đăng ký</a></div>}
+          {data.actor ? <div className="account-session"><button className="avatar-button" aria-label="Mở thông tin phiên đăng nhập" aria-expanded={accountOpen} onClick={() => setAccountOpen((value) => !value)}>{actorInitials}</button>{accountOpen && <div className="account-menu"><b>{data.actor.fullName}</b><small>{data.actor.email}</small><span>🔒 {data.actor.isDemo ? "Phiên demo cục bộ" : "Tài khoản PetCare đã đồng bộ"}</span><button onClick={() => { setAccountOpen(false); navigate("orders"); }}>Đơn hàng của tôi</button>{data.actor.isDemo ? <button onClick={() => setAccountOpen(false)}>Đóng</button> : <form action={SIGN_OUT_PATH} method="post"><button type="submit">Đăng xuất</button></form>}</div>}</div> : <a className="account-login" href={SIGN_IN_PATH}>Đăng nhập / Đăng ký</a>}
         </div>
       </header>
-      <section className="section-wrap category-showcase top-category-nav" aria-label="Danh mục chính">
-        {CATEGORY_CARDS.map((item) => <button key={item.id} className={view === "shop" && category === item.id ? "active" : ""} onClick={() => openCategory(item.id)}>
-          <span>{item.icon}</span>
-          <b>{item.title}</b>
-          <small>{item.text}</small>
-        </button>)}
-      </section>
 
       <main>
-        {view === "shop" && <ShopView products={filteredProducts} categories={categories} category={category} setCategory={setCategory} addToCart={addToCart} onNearby={() => navigate("nearby")} />}
+        {view === "shop" && <ShopView products={filteredProducts} category={category} search={search} onCategory={openCategory} onClearCategory={() => setCategory("Tất cả")} onClearSearch={() => setSearch("")} addToCart={addToCart} onOpenProduct={setDetailProduct} onNearby={() => navigate("nearby")} />}
         {view === "nearby" && <NearbyView type={nearbyType} setType={setNearbyType} partners={nearbyPartners} onBook={requestBooking} />}
-        {view === "pets" && (!data.actor ? <SignInGate title="Đăng nhập hoặc đăng ký để mở hồ sơ pet" text="Hồ sơ sức khỏe, QR và lịch tiêm chỉ hiển thị cho đúng chủ nuôi." /> : selectedPet ? <PetsView data={data} pet={selectedPet} selectedPetId={effectiveSelectedPetId} onSelectPet={setSelectedPetId} onShowQr={setQrPet} onBook={() => navigate("nearby")} onAdd={() => openPetForm()} onEdit={() => openPetForm(selectedPet)} onRotateQr={() => void rotatePetQr(selectedPet)} /> : <EmptyPets onAdd={() => openPetForm()} />)}
-        {view === "appointments" && (data.actor ? <AppointmentsView data={data} onFindVet={() => navigate("nearby")} /> : <SignInGate title="Đăng nhập để xem lịch khám" text="PetCare cần xác nhận đúng chủ nuôi trước khi hiển thị lịch hẹn." />)}
+        {view === "pets" && (!data.actor ? <SignInGate title="Đăng nhập hoặc đăng ký để mở hồ sơ pet" text="Hồ sơ sức khỏe, QR và lịch tiêm chỉ hiển thị cho đúng chủ nuôi." /> : selectedPet ? <PetsView data={data} pet={selectedPet} selectedPetId={effectiveSelectedPetId} onSelectPet={setSelectedPetId} onShowQr={setQrPet} onBook={() => navigate("nearby")} onAdd={() => openPetForm()} onEdit={() => openPetForm(selectedPet)} onRotateQr={() => void rotatePetQr(selectedPet)} onOpenRecord={setDetailRecord} /> : <EmptyPets onAdd={() => openPetForm()} />)}
+        {view === "appointments" && (data.actor ? <AppointmentsView data={data} onFindVet={() => navigate("nearby")} onOpen={setDetailAppointment} /> : <SignInGate title="Đăng nhập để xem lịch khám" text="PetCare cần xác nhận đúng chủ nuôi trước khi hiển thị lịch hẹn." />)}
         {view === "orders" && (data.actor ? <OrdersView orders={data.orders} onShop={() => navigate("shop")} /> : <SignInGate title="Đăng nhập để xem đơn hàng" text="Đơn hàng và trạng thái thanh toán chỉ hiển thị cho đúng tài khoản." />)}
       </main>
 
@@ -224,7 +286,10 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
         <button className={view === "orders" ? "active" : ""} onClick={() => navigate("orders")}><span>◇</span>Đơn hàng</button>
       </nav>
 
-      {cartOpen && <CartDrawer lines={cartLines} total={cartTotal} busy={checkoutBusy} onClose={() => setCartOpen(false)} onChange={(id, delta) => setCart((current) => ({ ...current, [id]: Math.max(0, (current[id] ?? 0) + delta) }))} onCheckout={() => void beginCheckout()} />}
+      {cartOpen && <CartDrawer lines={cartLines} total={cartTotal} busy={checkoutBusy} onClose={() => setCartOpen(false)} onChange={changeCartQuantity} onRemove={removeFromCart} onCheckout={() => void beginCheckout()} />}
+      {detailProduct && <ProductDetailModal product={detailProduct} inCart={cart[detailProduct.id] ?? 0} onClose={() => setDetailProduct(null)} onAdd={(quantity) => { if (addToCart(detailProduct.id, quantity)) setDetailProduct(null); }} onBuyNow={(quantity) => buyNow(detailProduct.id, quantity)} onViewShop={viewShopNearby} />}
+      {detailAppointment && <AppointmentDetailModal appointment={detailAppointment} pet={data.pets.find((pet) => pet.id === detailAppointment.pet_id)} partner={data.partners.find((partner) => partner.id === detailAppointment.partner_id)} onClose={() => setDetailAppointment(null)} />}
+      {detailRecord && <MedicalRecordModal record={detailRecord} petName={data.pets.find((pet) => pet.id === detailRecord.pet_id)?.name} onClose={() => setDetailRecord(null)} />}
       {bookingPartner && <BookingModal partner={bookingPartner} pets={data.pets} onClose={() => setBookingPartner(null)} onSuccess={async () => { setBookingPartner(null); setToast("Đã gửi yêu cầu. Phòng khám sẽ xác nhận sớm!"); await reload(); setView("appointments"); }} />}
       {qrPet && <QrModal pet={qrPet} onClose={() => setQrPet(null)} />}
       {checkoutOpen && checkoutOrder && <CheckoutModal order={checkoutOrder} onClose={() => setCheckoutOpen(false)} onSuccess={async () => { setCheckoutOpen(false); setCheckoutOrder(null); setCart({}); setToast("Đơn hàng đang chờ cửa hàng đối soát thanh toán."); await reload(); setView("orders"); }} />}
@@ -235,7 +300,8 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
   );
 }
 
-function ShopView({ products, categories, category, setCategory, addToCart, onNearby }: { products: Product[]; categories: string[]; category: string; setCategory: (value: string) => void; addToCart: (id: string) => void; onNearby: () => void }) {
+function ShopView({ products, category, search, onCategory, onClearCategory, onClearSearch, addToCart, onOpenProduct, onNearby }: { products: Product[]; category: string; search: string; onCategory: (id: string) => void; onClearCategory: () => void; onClearSearch: () => void; addToCart: (id: string) => void; onOpenProduct: (product: Product) => void; onNearby: () => void }) {
+  const searching = Boolean(normalizeSearch(search));
   const [shop, setShop] = useState("all");
   const [sort, setSort] = useState("suggested");
   const shops = [...new Set(products.map(p => p.partner_name).filter((name): name is string => Boolean(name)))];
@@ -256,12 +322,21 @@ function ShopView({ products, categories, category, setCategory, addToCart, onNe
       </div>
     </section>
 
+    <section className="section-wrap category-showcase" aria-label="Danh mục chính">
+      {CATEGORY_CARDS.map((item) => <button key={item.id} className={!searching && category === item.id ? "active" : ""} aria-pressed={!searching && category === item.id} onClick={() => onCategory(item.id)}>
+        <span>{item.icon}</span>
+        <b>{item.title}</b>
+        <small>{item.text}</small>
+      </button>)}
+    </section>
+
     <section className="benefit-strip section-wrap"><div><span>♢</span><b>Ảnh thực tế</b><small>Xem rõ từng sản phẩm</small></div><div><span>⚡</span><b>Giá có nguồn</b><small>Đối chiếu tại cửa hàng</small></div><div><span>♧</span><b>Chọn theo từng bé</b><small>Gợi ý đúng nhu cầu</small></div><div><span>♡</span><b>Thông tin shop</b><small>Tên và địa chỉ rõ ràng</small></div></section>
 
     <section className="section-wrap product-section" id="best-sellers">
       <div className="section-heading"><div><span className="eyebrow">Khám phá theo nhu cầu của bé</span><h2>Gợi ý hôm nay</h2></div><span className="catalog-count">{visibleProducts.length} sản phẩm</span></div>
-      <div className="catalog-notice"><b>Khám phá sản phẩm từ các shop</b><p>Các thẻ “Tham khảo” dùng ảnh thật và giá niêm yết tra ngày 04/10/2026. Shop chưa đăng bán trên PetCare; giá có thể thay đổi và chưa xác nhận tồn kho từng chi nhánh. Bạn có thể xem giá tại nguồn, chưa đặt hàng các món này trong ứng dụng.</p></div><div className="category-row">{categories.map((item) => <button key={item} className={category === item ? "active" : ""} onClick={() => setCategory(item)}>{item}</button>)}</div>
-      <div className="catalog-toolbar"><label>Cửa hàng<select value={shop} onChange={e => setShop(e.target.value)}><option value="all">Tất cả cửa hàng</option>{shops.map(name => <option key={name} value={name}>{name}</option>)}</select></label><label>Sắp xếp<select value={sort} onChange={e => setSort(e.target.value)}><option value="suggested">Gợi ý</option><option value="low">Giá thấp đến cao</option><option value="high">Giá cao đến thấp</option></select></label></div><div className="product-grid">{visibleProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={() => addToCart(product.id)} />)}</div>
+      <div className="catalog-notice"><b>Khám phá sản phẩm từ các shop</b><p>Các thẻ “Tham khảo” dùng ảnh thật và giá niêm yết tra ngày 04/10/2026. Shop chưa đăng bán trên PetCare; giá có thể thay đổi và chưa xác nhận tồn kho từng chi nhánh. Bấm vào thẻ để xem giá tại nguồn; chưa đặt hàng các món này trong ứng dụng.</p></div>
+      {(searching || category !== "Tất cả") && <div className="filter-chips">{searching ? <button onClick={onClearSearch} aria-label="Xóa từ khóa tìm kiếm">Kết quả cho “{search.trim()}” <span>✕</span></button> : <button onClick={onClearCategory} aria-label="Bỏ lọc danh mục">Danh mục: {category} <span>✕</span></button>}</div>}
+      <div className="catalog-toolbar"><label>Cửa hàng<select value={shop} onChange={e => setShop(e.target.value)}><option value="all">Tất cả cửa hàng</option>{shops.map(name => <option key={name} value={name}>{name}</option>)}</select></label><label>Sắp xếp<select value={sort} onChange={e => setSort(e.target.value)}><option value="suggested">Gợi ý</option><option value="low">Giá thấp đến cao</option><option value="high">Giá cao đến thấp</option></select></label></div><div className="product-grid">{visibleProducts.map((product) => <ProductCard key={product.id} product={product} onAdd={() => addToCart(product.id)} onOpen={() => onOpenProduct(product)} />)}</div>
       {!visibleProducts.length && <div className="empty-state"><span>⌕</span><h3>Chưa thấy món phù hợp</h3><p>Thử từ khóa hoặc nhóm sản phẩm khác nhé.</p></div>}
     </section>
 
@@ -277,14 +352,24 @@ function EmptyPets({ onAdd }: { onAdd: () => void }) {
   return <section className="section-wrap account-gate"><span>🐾</span><h1>Tạo hồ sơ cho bé đầu tiên</h1><p>Lưu thông tin cơ bản, lịch tiêm và cấp QR an toàn riêng cho từng bé.</p><button className="primary-button" onClick={onAdd}>+ Tạo hồ sơ pet</button></section>;
 }
 
-function ProductCard({ product, onAdd }: { product: Product; onAdd: () => void }) {
+function ProductThumb({ product, size = 120, alt = "" }: { product: Product; size?: number; alt?: string }) {
   const [imageFailed, setImageFailed] = useState(false);
+  return product.image_url && !imageFailed
+    ? <img src={product.image_url} alt={alt} loading="lazy" width={size} height={size} onError={() => setImageFailed(true)} />
+    : <span aria-hidden="true">{product.visual}</span>;
+}
+
+function ProductCard({ product, onAdd, onOpen }: { product: Product; onAdd: () => void; onOpen: () => void }) {
+  // The title link/button stretches over the whole card (see .card-link::after); inner controls sit above it.
+  const title = product.is_sample
+    ? <a className="card-link" href={product.source_url} target="_blank" rel="noreferrer" aria-label={`${product.name} — xem tại ${product.partner_name ?? "shop"} (mở tab mới)`}>{product.name}</a>
+    : <button className="card-link" onClick={onOpen} aria-haspopup="dialog">{product.name}</button>;
   return <article className={`product-card marketplace-card ${product.is_sample ? "sample-card" : ""}`}>
     <div className={`product-visual tone-${product.visual_tone}`}>
-      {product.image_url && !imageFailed ? <img src={product.image_url} alt={product.name} loading="lazy" width={400} height={400} onError={() => setImageFailed(true)} /> : <span>{product.visual}</span>}
+      <ProductThumb product={product} size={400} alt={product.name} />
       {product.badge && <b>{product.badge}</b>}
     </div>
-    <div className="product-info"><small>{product.category}</small><h3>{product.name}</h3>
+    <div className="product-info"><small>{product.category}</small><h3>{title}</h3>
       {!product.is_sample && <p>{product.description}</p>}
       {!product.is_sample && product.sold > 0 && <div className="rating-line"><span>{product.rating > 0 ? `★ ${product.rating}` : ""}</span><i>Đã bán {product.sold}</i></div>}
       <div className="price-line"><div>{product.is_sample && <small>Giá tham khảo</small>}<strong>{money(product.price)}</strong>{product.original_price && <del>{money(product.original_price)}</del>}</div>{!product.is_sample && <button onClick={onAdd} aria-label={`Thêm ${product.name} vào giỏ`}>+</button>}</div>
@@ -294,7 +379,7 @@ function ProductCard({ product, onAdd }: { product: Product; onAdd: () => void }
   </article>;
 }
 
-function PetsView({ data, pet, selectedPetId, onSelectPet, onShowQr, onBook, onAdd, onEdit, onRotateQr }: { data: AppData; pet: Pet; selectedPetId: string; onSelectPet: (id: string) => void; onShowQr: (pet: Pet) => void; onBook: () => void; onAdd: () => void; onEdit: () => void; onRotateQr: () => void }) {
+function PetsView({ data, pet, selectedPetId, onSelectPet, onShowQr, onBook, onAdd, onEdit, onRotateQr, onOpenRecord }: { data: AppData; pet: Pet; selectedPetId: string; onSelectPet: (id: string) => void; onShowQr: (pet: Pet) => void; onBook: () => void; onAdd: () => void; onEdit: () => void; onRotateQr: () => void; onOpenRecord: (record: MedicalRecord) => void }) {
   const vaccinations = data.vaccinations.filter((item) => item.pet_id === pet.id);
   const records = data.medicalRecords.filter((item) => item.pet_id === pet.id);
   const nextVaccine = vaccinations.find((item) => item.status === "overdue") ?? vaccinations.find((item) => item.status === "due") ?? vaccinations[0];
@@ -313,14 +398,14 @@ function PetsView({ data, pet, selectedPetId, onSelectPet, onShowQr, onBook, onA
           <button onClick={onBook}>Đặt lịch tái khám →</button>
         </div>
         <section className="record-panel"><div className="panel-heading"><div><h2>Lịch sử tiêm phòng</h2><p>Thông tin được xác nhận bởi cơ sở thú y</p></div><span className="verified-label">✓ Đã xác thực</span></div><div className="timeline">{vaccinations.map((item) => <div className="timeline-row" key={item.id}><span className={item.status}/><div><b>{item.vaccine_name}</b><small>{item.dose} · Lô {item.batch_number}</small></div><p><b>{dateText(item.administered_at)}</b><small>{item.provider_name}</small></p><em className={`vaccine-status ${item.status}`}>{item.status === "completed" ? "Đã tiêm" : item.status === "due" ? "Sắp đến hạn" : "Quá hạn"}</em></div>)}</div></section>
-        <section className="record-panel"><div className="panel-heading"><div><h2>Lịch sử khám bệnh</h2><p>Tự động cập nhật sau mỗi lần khám</p></div></div>{records.map((record) => <article className="medical-card" key={record.id}><div className="medical-date"><b>{new Date(record.visited_at).getDate()}</b><span>THG {new Date(record.visited_at).getMonth() + 1}</span></div><div><h3>{record.diagnosis}</h3><p>{record.treatment}</p><div className="medical-meta"><span>✚ {record.partner_name}</span><span>♙ {record.clinician}</span></div>{record.prescription && <small><b>Đơn thuốc:</b> {record.prescription}</small>}</div><button aria-label="Xem chi tiết hồ sơ">›</button></article>)}</section>
+        <section className="record-panel"><div className="panel-heading"><div><h2>Lịch sử khám bệnh</h2><p>Tự động cập nhật sau mỗi lần khám</p></div></div>{records.map((record) => <article className="medical-card" key={record.id}><div className="medical-date"><b>{new Date(record.visited_at).getDate()}</b><span>THG {new Date(record.visited_at).getMonth() + 1}</span></div><div><h3>{record.diagnosis}</h3><p>{record.treatment}</p><div className="medical-meta"><span>✚ {record.partner_name}</span><span>♙ {record.clinician}</span></div>{record.prescription && <small><b>Đơn thuốc:</b> {record.prescription}</small>}</div><button aria-label={`Xem chi tiết lần khám: ${record.diagnosis}`} aria-haspopup="dialog" onClick={() => onOpenRecord(record)}>›</button></article>)}</section>
       </div>
     </div>
   </section>;
 }
 
-function AppointmentsView({ data, onFindVet }: { data: AppData; onFindVet: () => void }) {
-  return <section className="section-wrap appointments-page"><div className="pet-page-head"><div><span className="eyebrow">Theo dõi từ lúc gửi đến khi khám</span><h1>Lịch khám của bé</h1></div><button className="primary-button small" onClick={onFindVet}>+ Đặt lịch mới</button></div><div className="appointment-grid">{data.appointments.map((item) => { const when = getVietnamDateParts(item.scheduled_at); return <article className="appointment-card" key={item.id}><div className="appointment-date"><b>{when?.day ?? "—"}</b><span>Tháng {when?.month ?? "—"}</span><small>{formatVietnamTime(item.scheduled_at)}</small></div><div className="appointment-content"><div><span className={`appointment-status ${item.status}`}>{item.status === "pending" ? "Chờ duyệt" : item.status === "confirmed" ? "Đã xác nhận" : item.status === "completed" ? "Đã khám" : "Đã hủy"}</span><h2>{item.reason}</h2><p>{item.partner_name}</p></div><div className="appointment-pet"><span>{data.pets.find((pet) => pet.id === item.pet_id)?.avatar ?? "🐾"}</span><p><b>{item.pet_name}</b><small>{item.note}</small></p></div><div className="appointment-actions"><button className="secondary-button">Xem chi tiết</button><a className="text-button" href={`tel:${data.partners.find((partner) => partner.id === item.partner_id)?.phone ?? ""}`}>Gọi phòng khám</a></div></div></article>; })}{!data.appointments.length && <div className="empty-state"><span>▣</span><h3>Chưa có lịch khám</h3><p>Tìm cơ sở đang mở và chọn giờ phù hợp cho bé.</p><button className="primary-button small" onClick={onFindVet}>Tìm thú y gần tôi</button></div>}</div></section>;
+function AppointmentsView({ data, onFindVet, onOpen }: { data: AppData; onFindVet: () => void; onOpen: (appointment: Appointment) => void }) {
+  return <section className="section-wrap appointments-page"><div className="pet-page-head"><div><span className="eyebrow">Theo dõi từ lúc gửi đến khi khám</span><h1>Lịch khám của bé</h1></div><button className="primary-button small" onClick={onFindVet}>+ Đặt lịch mới</button></div><div className="appointment-grid">{data.appointments.map((item) => { const when = getVietnamDateParts(item.scheduled_at); return <article className="appointment-card" key={item.id}><div className="appointment-date"><b>{when?.day ?? "—"}</b><span>Tháng {when?.month ?? "—"}</span><small>{formatVietnamTime(item.scheduled_at)}</small></div><div className="appointment-content"><div><span className={`appointment-status ${item.status}`}>{APPOINTMENT_STATUS[item.status]}</span><h2>{item.reason}</h2><p>{item.partner_name}</p></div><div className="appointment-pet"><span>{data.pets.find((pet) => pet.id === item.pet_id)?.avatar ?? "🐾"}</span><p><b>{item.pet_name}</b><small>{item.note}</small></p></div><div className="appointment-actions"><button className="secondary-button" aria-haspopup="dialog" onClick={() => onOpen(item)}>Xem chi tiết</button><a className="text-button" href={`tel:${data.partners.find((partner) => partner.id === item.partner_id)?.phone ?? ""}`}>Gọi phòng khám</a></div></div></article>; })}{!data.appointments.length && <div className="empty-state"><span>▣</span><h3>Chưa có lịch khám</h3><p>Tìm cơ sở đang mở và chọn giờ phù hợp cho bé.</p><button className="primary-button small" onClick={onFindVet}>Tìm thú y gần tôi</button></div>}</div></section>;
 }
 
 function OrdersView({ orders, onShop }: { orders: Order[]; onShop: () => void }) {
@@ -329,6 +414,11 @@ function OrdersView({ orders, onShop }: { orders: Order[]; onShop: () => void })
 }
 
 function ModalShell({ title, onClose, children, className = "" }: { title: string; onClose: () => void; children: React.ReactNode; className?: string }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}><div className={`modal-card ${className}`} role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><h2>{title}</h2><button onClick={onClose} aria-label="Đóng">×</button></div>{children}</div></div>;
 }
 
@@ -352,8 +442,66 @@ function PetFormModal({ pet, onClose, onSuccess }: { pet: Pet | null; onClose: (
   return <ModalShell title={pet ? `Chỉnh sửa hồ sơ · ${pet.name}` : "Thêm hồ sơ cho bé"} onClose={onClose}><form className="booking-form pet-form" onSubmit={submit}><label>Tên của bé<input name="petName" required maxLength={80} placeholder="Bông" defaultValue={pet?.name} /></label><label>Loài<select name="species" required defaultValue={pet?.species ?? "Chó"}><option>Chó</option><option>Mèo</option><option>Thỏ</option><option>Khác</option></select></label><label>Giống<input name="breed" required maxLength={100} placeholder="Poodle Toy" defaultValue={pet?.breed} /></label><label>Giới tính<select name="sex" required defaultValue={pet?.sex ?? "Đực"}><option>Đực</option><option>Cái</option><option>Chưa xác định</option></select></label><label>Ngày sinh<input name="dateOfBirth" type="date" max={new Date().toISOString().slice(0,10)} required defaultValue={pet?.date_of_birth} /></label><label>Cân nặng (kg)<input name="weightKg" type="number" min="0.1" max="250" step="0.1" required defaultValue={pet?.weight_kg} /></label><label>Nhóm máu<input name="bloodType" maxLength={40} defaultValue={pet?.blood_type ?? ""} placeholder="DEA 1.1-" /></label><label>Microchip<input name="microchip" maxLength={80} defaultValue={pet?.microchip ?? ""} /></label><label className="wide-field">Dị ứng<textarea name="allergies" maxLength={300} placeholder="Thực phẩm, thuốc, môi trường..." defaultValue={pet?.allergies} /></label><label className="wide-field">Ghi chú riêng tư<textarea name="petNotes" maxLength={500} placeholder="Tính cách, màu lông, đặc điểm dễ nhận ra" defaultValue={pet?.notes} /></label>{error && <p className="form-error">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Hủy</button><button className="primary-button small" disabled={busy}>{busy ? "Đang lưu..." : pet ? "Lưu thay đổi" : "Tạo hồ sơ & QR"}</button></div><small className="secure-note">🔒 Ghi chú riêng tư không xuất hiện trên thẻ QR công khai.</small></form></ModalShell>;
 }
 
-function CartDrawer({ lines, total, busy, onClose, onChange, onCheckout }: { lines: Array<{ product: Product; quantity: number }>; total: number; busy: boolean; onClose: () => void; onChange: (id: string, delta: number) => void; onCheckout: () => void }) {
-  return <div className="drawer-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}><aside className="cart-drawer"><div className="modal-head"><div><span className="eyebrow">Quà cho boss</span><h2>Túi hàng của bạn</h2></div><button onClick={onClose}>×</button></div><div className="cart-lines">{lines.map(({ product, quantity }) => <div className="cart-line" key={product.id}><span className={`tone-${product.visual_tone}`}>{product.visual}</span><div><b>{product.name}</b><small>{money(product.price)}</small><div className="quantity"><button onClick={() => onChange(product.id, -1)}>−</button><b>{quantity}</b><button onClick={() => onChange(product.id, 1)}>+</button></div></div></div>)}{!lines.length && <div className="empty-state compact"><span>🛍️</span><h3>Túi hàng đang trống</h3><p>Chọn vài món boss mê nhé.</p></div>}</div><div className="cart-summary"><span>Tạm tính <b>{money(total)}</b></span><span>Phí giao hàng <b>{total >= 299000 ? "Miễn phí" : "Tính ở bước sau"}</b></span><hr/><span className="cart-total">Tổng cộng <b>{money(total)}</b></span><button className="primary-button checkout" disabled={!lines.length || busy} onClick={onCheckout}>{busy ? "Đang tạo đơn..." : "Tạo đơn & thanh toán →"}</button><small>🔒 Tổng tiền được backend tính lại từ database</small></div></aside></div>;
+function CartDrawer({ lines, total, busy, onClose, onChange, onRemove, onCheckout }: { lines: Array<{ product: Product; quantity: number }>; total: number; busy: boolean; onClose: () => void; onChange: (id: string, delta: number) => void; onRemove: (id: string) => void; onCheckout: () => void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return <div className="drawer-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}><aside className="cart-drawer" role="dialog" aria-modal="true" aria-label="Túi hàng của bạn"><div className="modal-head"><div><span className="eyebrow">Quà cho boss</span><h2>Túi hàng của bạn</h2></div><button onClick={onClose} aria-label="Đóng giỏ hàng">×</button></div><div className="cart-lines">{lines.map(({ product, quantity }) => { const atMax = quantity >= maxCartQuantity(product); return <div className="cart-line" key={product.id}><span className={`tone-${product.visual_tone}`}><ProductThumb product={product} size={75} /></span><div><b>{product.name}</b><small>{money(product.price)}</small><div className="quantity"><button onClick={() => onChange(product.id, -1)} aria-label={`Giảm số lượng ${product.name}`}>−</button><b>{quantity}</b><button onClick={() => onChange(product.id, 1)} disabled={atMax} aria-label={`Tăng số lượng ${product.name}`}>+</button><button className="cart-remove" onClick={() => onRemove(product.id)}>Xóa</button></div>{atMax && <em className="cart-stock-note">Đã đạt số lượng tối đa có thể đặt</em>}</div></div>; })}{!lines.length && <div className="empty-state compact"><span>🛍️</span><h3>Túi hàng đang trống</h3><p>Chọn vài món boss mê nhé.</p></div>}</div><div className="cart-summary"><span>Tạm tính <b>{money(total)}</b></span><span>Phí giao hàng <b>{total >= 299000 ? "Miễn phí" : "Tính ở bước sau"}</b></span><hr/><span className="cart-total">Tổng cộng <b>{money(total)}</b></span><button className="primary-button checkout" disabled={!lines.length || busy} onClick={onCheckout}>{busy ? "Đang tạo đơn..." : "Tạo đơn & thanh toán →"}</button><small>🔒 Tổng tiền được backend tính lại từ database</small></div></aside></div>;
+}
+
+function ProductDetailModal({ product, inCart, onClose, onAdd, onBuyNow, onViewShop }: { product: Product; inCart: number; onClose: () => void; onAdd: (quantity: number) => void; onBuyNow: (quantity: number) => void; onViewShop: () => void }) {
+  const available = Math.max(0, maxCartQuantity(product) - inCart);
+  const [quantity, setQuantity] = useState(1);
+  const qty = Math.min(Math.max(1, quantity), Math.max(1, available));
+  const discount = product.original_price && product.original_price > product.price ? Math.round((1 - product.price / product.original_price) * 100) : 0;
+  const stockText = product.stock <= 5 ? `Sắp hết hàng — chỉ còn ${product.stock} sản phẩm` : `Còn ${product.stock} sản phẩm`;
+  return <ModalShell title="Chi tiết sản phẩm" onClose={onClose} className="product-modal">
+    <div className="product-modal-body">
+      <div className={`product-modal-visual tone-${product.visual_tone}`}><ProductThumb product={product} size={480} alt={product.name} />{product.badge && <b>{product.badge}</b>}</div>
+      <div className="product-modal-info">
+        <small className="product-modal-category">{product.category}</small>
+        <h3>{product.name}</h3>
+        {product.sold > 0 && <div className="rating-line"><span>{product.rating > 0 ? `★ ${product.rating}` : ""}</span><i>Đã bán {product.sold}</i></div>}
+        <div className="product-modal-price"><strong>{money(product.price)}</strong>{product.original_price && <del>{money(product.original_price)}</del>}{discount > 0 && <em>-{discount}%</em>}</div>
+        {product.description && <p>{product.description}</p>}
+        <span className={`product-stock ${product.stock <= 5 ? "low" : ""}`}>{stockText}</span>
+        {available > 0 ? <>
+          <div className="product-modal-qty"><span>Số lượng</span><div className="quantity"><button onClick={() => setQuantity(qty - 1)} disabled={qty <= 1} aria-label="Giảm số lượng">−</button><b aria-live="polite">{qty}</b><button onClick={() => setQuantity(qty + 1)} disabled={qty >= available} aria-label="Tăng số lượng">+</button></div>{inCart > 0 && <small>Đã có {inCart} trong giỏ</small>}</div>
+          <div className="product-modal-actions"><button className="secondary-button" onClick={() => onAdd(qty)}>Thêm vào giỏ</button><button className="primary-button small" onClick={() => onBuyNow(qty)}>Mua ngay →</button></div>
+        </> : <p className="form-error">Bạn đã thêm toàn bộ số lượng có thể đặt vào giỏ.</p>}
+        <div className="product-modal-seller"><div><b>▣ {product.partner_name || "Cửa hàng PetCare"}</b><span>⌖ {product.partner_address || "Địa chỉ đang cập nhật"}</span></div><button className="text-button" onClick={onViewShop}>Xem shop gần bạn <span>→</span></button></div>
+      </div>
+    </div>
+  </ModalShell>;
+}
+
+function AppointmentDetailModal({ appointment, pet, partner, onClose }: { appointment: Appointment; pet?: Pet; partner?: Partner; onClose: () => void }) {
+  return <ModalShell title="Chi tiết lịch khám" onClose={onClose} className="detail-modal">
+    <div className="detail-head"><span className={`appointment-status ${appointment.status}`}>{APPOINTMENT_STATUS[appointment.status]}</span><h3>{appointment.reason}</h3><p>{dateTimeText(appointment.scheduled_at)}</p></div>
+    <dl className="detail-list">
+      <div><dt>Bé</dt><dd>{pet?.avatar ?? appointment.pet_avatar ?? "🐾"} {appointment.pet_name}{(pet?.breed ?? appointment.pet_breed) ? ` · ${pet?.breed ?? appointment.pet_breed}` : ""}</dd></div>
+      <div><dt>Cơ sở</dt><dd>{appointment.partner_name}</dd></div>
+      {partner?.address && <div><dt>Địa chỉ</dt><dd>{partner.address}</dd></div>}
+      {partner?.phone && <div><dt>Điện thoại</dt><dd>{partner.phone}</dd></div>}
+      {partner?.hours && <div><dt>Giờ mở cửa</dt><dd>{partner.hours}</dd></div>}
+      <div><dt>Ghi chú</dt><dd>{appointment.note || "Không có ghi chú"}</dd></div>
+    </dl>
+    <div className="modal-actions">{partner && <a className="secondary-button" href={`https://www.google.com/maps/dir/?api=1&destination=${partner.latitude},${partner.longitude}`} target="_blank" rel="noreferrer">Chỉ đường ↗</a>}{partner?.phone && <a className="primary-button small" href={`tel:${partner.phone}`}>Gọi phòng khám</a>}</div>
+  </ModalShell>;
+}
+
+function MedicalRecordModal({ record, petName, onClose }: { record: MedicalRecord; petName?: string; onClose: () => void }) {
+  return <ModalShell title="Chi tiết lần khám" onClose={onClose} className="detail-modal">
+    <div className="detail-head"><span className="verified-label">✓ {dateText(record.visited_at)}</span><h3>{record.diagnosis}</h3><p>{petName ? `${petName} · ` : ""}{record.partner_name}</p></div>
+    <dl className="detail-list">
+      <div><dt>Bác sĩ</dt><dd>{record.clinician}</dd></div>
+      <div><dt>Điều trị</dt><dd>{record.treatment}</dd></div>
+      <div><dt>Đơn thuốc</dt><dd>{record.prescription || "Không kê đơn"}</dd></div>
+      {record.notes && <div><dt>Ghi chú</dt><dd>{record.notes}</dd></div>}
+    </dl>
+  </ModalShell>;
 }
 
 function QrModal({ pet, onClose }: { pet: Pet; onClose: () => void }) {
