@@ -250,7 +250,7 @@ function ShopView({ products, categories, category, setCategory, addToCart, onNe
         <div className="trust-row"><span>Ảnh sản phẩm thực tế</span><span>Giá tham khảo có nguồn</span></div>
       </div>
       <div className="hero-art" aria-label="Miso đang vui bên quà tặng">
-        <div className="hero-blob"><div className="hero-pet">🐶</div><span className="spark spark-one">✦</span><span className="spark spark-two">♥</span></div>
+        <div className="hero-blob"><img className="hero-pet pet-photo" src="/images/pets/golden-retriever.jpg" alt="Chó Golden Retriever với bộ lông vàng" width={900} height={900} fetchPriority="high" /><span className="spark spark-one">✦</span><span className="spark spark-two">♥</span></div>
         <div className="floating-card float-food"><span>🥣</span><div><b>Bữa ngon mỗi ngày</b><small>Đủ dinh dưỡng</small></div></div>
         <div className="floating-card float-care"><span>✚</span><div><b>Chăm sóc gần bạn</b><small>Đặt lịch trong 1 phút</small></div></div>
       </div>
@@ -265,7 +265,7 @@ function ShopView({ products, categories, category, setCategory, addToCart, onNe
       {!visibleProducts.length && <div className="empty-state"><span>⌕</span><h3>Chưa thấy món phù hợp</h3><p>Thử từ khóa hoặc nhóm sản phẩm khác nhé.</p></div>}
     </section>
 
-    <section className="section-wrap care-banner"><div><span className="eyebrow">PetCare 360</span><h2>Không chỉ mua sắm.<br/>Còn là bình an.</h2><p>Xem cơ sở đang mở, đặt lịch và giữ hồ sơ sức khỏe của bé trong một nơi.</p><button className="light-button" onClick={onNearby}>Khám phá gần bạn →</button></div><div className="care-orbit"><span className="care-pet">🐕</span><i>✚</i><i>⌖</i><i>♡</i></div></section>
+    <section className="section-wrap care-banner"><div><span className="eyebrow">PetCare 360</span><h2>Không chỉ mua sắm.<br/>Còn là bình an.</h2><p>Xem cơ sở đang mở, đặt lịch và giữ hồ sơ sức khỏe của bé trong một nơi.</p><button className="light-button" onClick={onNearby}>Khám phá gần bạn →</button></div><div className="care-orbit"><img className="care-pet pet-photo" src="/images/pets/golden-outdoors.jpg" alt="Chó Golden Retriever vui chơi ngoài trời" width={700} height={700} loading="lazy" /><i>✚</i><i>⌖</i><i>♡</i></div></section>
   </>;
 }
 
