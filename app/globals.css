@@ -183,3 +183,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cart-button { flex-shrink:0; white-space:nowrap; }
 .main-header { gap:16px; }
 @media(min-width:761px) { .main-header { height:auto; min-height:78px; flex-wrap:wrap; padding-block:12px; } }
+.login-page { min-height:100vh; padding:48px 20px; display:grid; place-items:center; }
+.login-card { width:min(480px,100%); padding:32px; border:1px solid var(--line); border-radius:24px; background:white; box-shadow:var(--shadow); }
+.login-card h1 { font-size:2rem; line-height:1.25; margin:24px 0 12px; }
+.login-card p { font-size:1rem; line-height:1.6; color:var(--muted); }
+.login-form { display:grid; gap:10px; margin-top:24px; }
+.login-form label { font-size:1rem; font-weight:700; }
+.login-form input { width:100%; min-height:48px; padding:12px; border:1px solid #b6bec9; border-radius:10px; font-size:1.125rem; }
+.login-form button { margin-top:12px; }
+.login-divider { text-align:center; margin:18px 0; color:var(--muted); }
+.login-card>.secondary-button { width:100%; }
+.login-card .login-help { font-size:.875rem; margin-top:20px; }
+@media(max-width:480px) { .login-card { padding:24px; } }

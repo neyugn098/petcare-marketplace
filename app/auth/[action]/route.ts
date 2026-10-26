@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { appOrigin, authClient, authConfigured, requestCookies, safeReturnTo } from "../../../lib/supabase";
 import type { CookieOptions } from "@supabase/ssr";
+import { usernameEmail } from "../../../lib/username";
 
 type Context = { params: Promise<{ action: string }> };
 const noStore = { "Cache-Control": "private, no-store" };
@@ -21,6 +22,9 @@ export async function GET(request: Request, context: Context) {
   }
   const failure = (reason: string) => NextResponse.redirect(new URL(`/auth/error?reason=${reason}`, origin), { headers: noStore });
   if (!authConfigured()) return failure("setup");
+  if (action === "signin" && current.searchParams.get("provider") !== "google") {
+    return NextResponse.redirect(new URL(`/login?return_to=${encodeURIComponent(returnTo)}`, origin), { headers: noStore });
+  }
   const pending: { name: string; value: string; options: CookieOptions }[] = [];
   const client = authClient({ getAll: () => requestCookies(request), setAll: (cookies) => { pending.push(...cookies); } });
   const finish = (url: URL | string) => {
@@ -43,9 +47,30 @@ export async function GET(request: Request, context: Context) {
 }
 
 export async function POST(request: Request, context: Context) {
-  if ((await context.params).action !== "signout") return new Response("Not found", { status: 404 });
+  const { action } = await context.params;
+  if (!["signout", "password"].includes(action)) return new Response("Not found", { status: 404 });
   const origin = appOrigin(request);
   if (request.headers.get("origin") !== origin || request.headers.get("sec-fetch-site") === "cross-site") return new Response("Forbidden", { status: 403 });
+  if (action === "password") {
+    if (!request.headers.get("content-type")?.startsWith("application/x-www-form-urlencoded")) return new Response("Unsupported media type", { status: 415 });
+    if (Number(request.headers.get("content-length")) > 4096) return new Response("Payload too large", { status: 413 });
+    const body = await request.text();
+    if (body.length > 4096) return new Response("Payload too large", { status: 413 });
+    const form = new URLSearchParams(body);
+    const returnTo = safeReturnTo(form.get("return_to"));
+    const fail = (error: string) => NextResponse.redirect(new URL(`/login?error=${error}&return_to=${encodeURIComponent(returnTo)}`, origin), { status: 303, headers: noStore });
+    const email = usernameEmail(form.get("username") || "");
+    const password = form.get("password") || "";
+    if (!email || !password || password.length > 128) return fail("credentials");
+    if (!authConfigured()) return fail("unavailable");
+    const response = NextResponse.redirect(new URL(returnTo, origin), { status: 303, headers: noStore });
+    try {
+      const client = authClient({ getAll: () => requestCookies(request), setAll: (cookies) => cookies.forEach(({ name, value, options }) => response.cookies.set(name, value, options)) });
+      // Supabase verifies hashes and applies its authentication rate limits.
+      const { error } = await client.auth.signInWithPassword({ email, password });
+      return error ? fail("credentials") : response;
+    } catch { return fail("unavailable"); }
+  }
   const response = NextResponse.redirect(new URL("/", origin), { status: 303, headers: noStore });
   if (authConfigured()) {
     const client = authClient({

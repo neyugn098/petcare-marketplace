@@ -229,7 +229,7 @@ export default function CustomerApp({ initialActor }: { initialActor: AppData["a
       {qrPet && <QrModal pet={qrPet} onClose={() => setQrPet(null)} />}
       {checkoutOpen && checkoutOrder && <CheckoutModal order={checkoutOrder} onClose={() => setCheckoutOpen(false)} onSuccess={async () => { setCheckoutOpen(false); setCheckoutOrder(null); setCart({}); setToast("Đơn hàng đang chờ cửa hàng đối soát thanh toán."); await reload(); setView("orders"); }} />}
       {petFormOpen && <PetFormModal pet={petFormPet} onClose={() => { setPetFormOpen(false); setPetFormPet(null); }} onSuccess={async () => { setPetFormOpen(false); setPetFormPet(null); setToast(petFormPet ? "Đã cập nhật hồ sơ của bé." : "Đã tạo hồ sơ mới và cấp QR riêng cho bé."); await reload(); }} />}
-      {authPrompt && <ModalShell title="Đăng nhập để đặt lịch" onClose={() => setAuthPrompt(false)} className="auth-prompt-modal"><div className="auth-shield">🔒</div><p>Đăng nhập giúp phòng khám nhận đúng hồ sơ pet và ngăn người khác đặt lịch thay bạn.</p><a className="primary-button small" href={SIGN_IN_PATH}>Tiếp tục với Google</a><button className="text-button" onClick={() => setAuthPrompt(false)}>Tiếp tục xem trước</button></ModalShell>}
+      {authPrompt && <ModalShell title="Đăng nhập để đặt lịch" onClose={() => setAuthPrompt(false)} className="auth-prompt-modal"><div className="auth-shield">🔒</div><p>Đăng nhập giúp phòng khám nhận đúng hồ sơ pet và ngăn người khác đặt lịch thay bạn.</p><a className="primary-button small" href={SIGN_IN_PATH}>Đăng nhập</a><button className="text-button" onClick={() => setAuthPrompt(false)}>Tiếp tục xem trước</button></ModalShell>}
       {toast && <div className="toast" role="status">{toast}</div>}
     </div>
   );
@@ -270,7 +270,7 @@ function ShopView({ products, categories, category, setCategory, addToCart, onNe
 }
 
 function SignInGate({ title, text }: { title: string; text: string }) {
-  return <section className="section-wrap account-gate"><span>🔒</span><h1>{title}</h1><p>{text}</p><a className="primary-button" href={SIGN_IN_PATH}>Tiếp tục với Google <span>→</span></a><small>Đăng nhập hoặc tạo tài khoản bằng Google. PetCare không lưu mật khẩu Google.</small></section>;
+  return <section className="section-wrap account-gate"><span>🔒</span><h1>{title}</h1><p>{text}</p><a className="primary-button" href={SIGN_IN_PATH}>Đăng nhập <span>→</span></a><small>Đăng nhập bằng username và mật khẩu, hoặc tài khoản Google.</small></section>;
 }
 
 function EmptyPets({ onAdd }: { onAdd: () => void }) {

@@ -99,7 +99,7 @@ export default function PartnerApp({ initialActor }: { initialActor: AppData["ac
 }
 
 function PartnerAccessGate({ icon, title, text, signIn = false, signedInEmail }: { icon: string; title: string; text: string; signIn?: boolean; signedInEmail?: string }) {
-  return <main className="partner-access-page"><section><Link className="partner-brand" href="/"><span>P</span><b>PetCare</b><i>Partner</i></Link><div className="partner-access-icon">{icon}</div><h1>{title}</h1><p>{text}</p>{signedInEmail && <small>Đang đăng nhập: {signedInEmail}</small>}{signIn ? <a className="portal-primary" href="/auth/signin?return_to=%2Fpartner">Tiếp tục với Google</a> : signedInEmail ? <a className="partner-signout" href="/auth/signout?return_to=%2F">Đăng xuất</a> : null}</section></main>;
+  return <main className="partner-access-page"><section><Link className="partner-brand" href="/"><span>P</span><b>PetCare</b><i>Partner</i></Link><div className="partner-access-icon">{icon}</div><h1>{title}</h1><p>{text}</p>{signedInEmail && <small>Đang đăng nhập: {signedInEmail}</small>}{signIn ? <a className="portal-primary" href="/auth/signin?return_to=%2Fpartner">Đăng nhập</a> : signedInEmail ? <a className="partner-signout" href="/auth/signout?return_to=%2F">Đăng xuất</a> : null}</section></main>;
 }
 
 function roleLabel(role?: PartnerRole) {
