@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { stat } from "node:fs/promises";
 import { sampleProducts, catalogProducts } from "../app/catalog";
 test("reference catalog is sourced, has real local photos and cannot enter live inventory", async () => {
-  assert.equal(sampleProducts.length, 8);
-  assert.equal(new Set(sampleProducts.map(p=>p.id)).size,8);
+  assert.ok(sampleProducts.length >= 20);
+  assert.equal(new Set(sampleProducts.map(p=>p.id)).size,sampleProducts.length);
+  assert.ok(sampleProducts.filter(p=>p.category === "Thời trang").length >= 6);
+  assert.ok(sampleProducts.filter(p=>p.category === "Thức ăn").length >= 6);
   for(const p of sampleProducts){
     assert.equal(p.is_sample,true); assert.equal(p.active,0); assert.equal(p.stock,0);
     assert.ok(p.source_url?.startsWith("https://")); assert.ok(p.partner_name && p.partner_address);
