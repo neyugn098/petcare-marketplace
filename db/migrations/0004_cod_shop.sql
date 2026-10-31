@@ -1,0 +1,11 @@
+ALTER TABLE products ADD COLUMN image_url TEXT;
+ALTER TABLE products ADD COLUMN is_owner_product BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE partners ADD COLUMN cod_enabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE partners ADD COLUMN online_only BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE orders ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'transfer' CHECK (payment_method IN ('transfer','cod'));
+ALTER TABLE orders ADD COLUMN recipient_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN recipient_phone TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN shipping_address TEXT NOT NULL DEFAULT '';
+ALTER TABLE orders DROP CONSTRAINT orders_status_check;
+ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (status IN ('pending_payment','payment_review','paid','cancelled','fulfilled','cod_pending','cod_shipping'));
+ALTER TABLE owner_payment_history ADD COLUMN owner_confirmed_sale BOOLEAN NOT NULL DEFAULT false;

@@ -1,7 +1,7 @@
 export type Product = {
   id: string; partner_id: string; name: string; category: string; price: number;
   original_price: number | null; visual: string; visual_tone: string; rating: number;
-  is_sample?: boolean; is_owner_draft?: boolean; image_url?: string; source_url?: string; price_checked_at?: string; partner_name?: string; partner_address?: string;
+  is_owner_product?: boolean; cod_enabled?: boolean; is_sample?: boolean; is_owner_draft?: boolean; image_url?: string; source_url?: string; price_checked_at?: string; partner_name?: string; partner_address?: string;
   sold: number; stock: number; badge: string | null; description: string; active: number;
 };
 
@@ -40,7 +40,7 @@ export type PartnerRole = "owner" | "manager" | "clinician" | "staff";
 
 export type Order = {
   id: string; order_code: string; owner_email: string; partner_id: string;
-  total_amount: number; status: "pending_payment" | "payment_review" | "paid" | "cancelled" | "fulfilled";
+  payment_method?: string; recipient_name?: string; recipient_phone?: string; shipping_address?: string; total_amount: number; status: "pending_payment" | "payment_review" | "paid" | "cancelled" | "fulfilled" | "cod_pending" | "cod_shipping";
   created_at: string; updated_at: string; partner_name: string;
   items?: Array<{ id: string; product_id: string; product_name: string; unit_price: number; quantity: number; line_total: number }>;
 };

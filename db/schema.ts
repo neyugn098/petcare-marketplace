@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, pgTable, text, uniqueIndex, date, timestamp, check } from "drizzle-orm/pg-core";
+import { index, integer, real, pgTable, text, uniqueIndex, date, timestamp, check, boolean } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   email: text("email").primaryKey(),
@@ -14,6 +14,7 @@ export const ownerProductDrafts = pgTable("owner_product_drafts", {
   description: text("description").notNull(),
 }, table => [check("owner_product_drafts_proposed_price_check",sql`${table.proposedPrice} > 0`),check("owner_product_drafts_stock_check",sql`${table.stock} >= 0`),check("owner_product_drafts_status_check",sql`${table.status} = 'draft'`)]);
 export const ownerPaymentHistory = pgTable("owner_payment_history", {
+  ownerConfirmedSale: boolean("owner_confirmed_sale").notNull().default(false),
   id: text("id").primaryKey(), amount: integer("amount").notNull(), transactionDate: date("transaction_date"),
   displayedTime: text("displayed_time").notNull(), description: text("description").notNull(),
   classification: text("classification").notNull(), sourceReference: text("source_reference").notNull().unique(),
@@ -21,6 +22,8 @@ export const ownerPaymentHistory = pgTable("owner_payment_history", {
 }, table => [check("owner_payment_history_amount_check",sql`${table.amount} <> 0`),check("owner_payment_history_classification_check",sql`${table.classification} IN ('petcare_receipt','unclassified_receipt','outgoing')`),check("owner_payment_history_verification_check",sql`${table.verification} = 'imported_screenshot'`)]);
 
 export const partners = pgTable("partners", {
+  codEnabled: boolean("cod_enabled").notNull().default(false),
+  onlineOnly: boolean("online_only").notNull().default(false),
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   type: text("type", { enum: ["vet", "shop", "both"] }).notNull(),
@@ -118,6 +121,8 @@ export const medicalRecords = pgTable("medical_records", {
 ]);
 
 export const products = pgTable("products", {
+  imageUrl: text("image_url"),
+  isOwnerProduct: boolean("is_owner_product").notNull().default(false),
   id: text("id").primaryKey(),
   partnerId: text("partner_id").notNull().references(() => partners.id),
   name: text("name").notNull(),
@@ -145,12 +150,16 @@ export const auditLogs = pgTable("audit_logs", {
 }, (table) => [index("audit_rate_idx").on(table.actorEmail, table.action, table.createdAt)]);
 
 export const orders = pgTable("orders", {
+  paymentMethod: text("payment_method").notNull().default("transfer"),
+  recipientName: text("recipient_name").notNull().default(""),
+  recipientPhone: text("recipient_phone").notNull().default(""),
+  shippingAddress: text("shipping_address").notNull().default(""),
   id: text("id").primaryKey(),
   orderCode: text("order_code").notNull(),
   ownerEmail: text("owner_email").notNull(),
   partnerId: text("partner_id").notNull().references(() => partners.id),
   totalAmount: integer("total_amount").notNull(),
-  status: text("status", { enum: ["pending_payment", "payment_review", "paid", "cancelled", "fulfilled"] }).notNull(),
+  status: text("status", { enum: ["pending_payment", "payment_review", "paid", "cancelled", "fulfilled", "cod_pending", "cod_shipping"] }).notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [

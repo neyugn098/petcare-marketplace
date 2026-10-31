@@ -84,6 +84,25 @@ test("PostgreSQL migration and application flows", async (t) => {
       assert.equal((await post({ action: "updateOrderStatus", orderId: id, status: "paid" })).status, 409);
       assert.equal((await db.prepare("SELECT stock FROM products WHERE id='prod-toy'").first<{ stock: number }>())?.stock, 17);
     });
+    await t.test("COD validates delivery, reserves stock, cancels once and collects only on delivery", async () => {
+      await db.prepare("UPDATE partners SET cod_enabled=true WHERE id='shop-paw-mart'").run();
+      await db.prepare("UPDATE products SET stock=2 WHERE id='prod-toy'").run();
+      const payload = {action:"createOrder",paymentMethod:"cod",recipientName:"Khách kiểm thử",recipientPhone:"0901234567",shippingAddress:"Địa chỉ kiểm thử, không giao hàng",items:[{productId:"prod-toy",quantity:2}]};
+      assert.equal((await post({...payload,recipientPhone:"bad"})).status,400);
+      const first=await post(payload);assert.equal(first.status,201);const {id}=await first.json();
+      assert.equal((await post(payload)).status,409);
+      assert.equal((await post({action:"markOrderPaymentSent",orderId:id})).status,409);
+      assert.equal((await post({action:"updateOrderStatus",orderId:id,status:"fulfilled"})).status,409);
+      assert.equal((await post({action:"updateOrderStatus",orderId:id,status:"cancelled"})).status,200);
+      assert.equal((await post({action:"updateOrderStatus",orderId:id,status:"cancelled"})).status,409);
+      assert.equal((await db.prepare("SELECT stock FROM products WHERE id='prod-toy'").first())?.stock,2);
+      const second=await (await post(payload)).json();
+      const before=(await db.prepare("SELECT sold FROM products WHERE id='prod-toy'").first())?.sold as number;
+      assert.equal((await post({action:"updateOrderStatus",orderId:second.id,status:"cod_shipping"})).status,200);
+      assert.equal((await post({action:"updateOrderStatus",orderId:second.id,status:"fulfilled"})).status,200);
+      assert.equal((await db.prepare("SELECT sold FROM products WHERE id='prod-toy'").first())?.sold,before+2);
+      assert.equal((await db.prepare("SELECT stock FROM products WHERE id='prod-toy'").first())?.stock,0);
+    });
     await t.test("partner pins require numeric coordinates and remain private until verified", async () => {
       const payload = { action: "registerPartner", name: "Test shop", partnerType: "shop", address: "Test address", phone: "0901234567", hours: "08:00–17:00", services: "Grooming", latitude: 10.77, longitude: 106.7 };
       assert.equal((await post({ ...payload, latitude: null })).status, 400);

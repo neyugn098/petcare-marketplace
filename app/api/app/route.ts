@@ -8,6 +8,10 @@ class ConflictError extends Error {}
 
 type ActionPayload = {
   action?: string;
+  paymentMethod?: string;
+  recipientName?: string;
+  recipientPhone?: string;
+  shippingAddress?: string;
   petId?: string;
   partnerId?: string;
   appointmentId?: string;
@@ -78,10 +82,10 @@ async function loadData(request: Request) {
   const email = actor?.email ?? "";
 
   const [products, partners, pets, appointments, vaccinations, medicalRecords, partnerRoles, partnerAppointments, partnerProducts, partnerPets, orders, orderItems, partnerOrders, partnerOrderItems] = await Promise.all([
-    db.prepare(`SELECT p.*, pr.name AS partner_name, pr.address AS partner_address FROM products p JOIN partners pr ON pr.id = p.partner_id WHERE p.active = 1 AND p.stock > 0 AND pr.verified = 1 ORDER BY p.sold DESC LIMIT 48`).all(),
+    db.prepare(`SELECT p.*, pr.name AS partner_name, pr.address AS partner_address, pr.cod_enabled FROM products p JOIN partners pr ON pr.id = p.partner_id WHERE p.active = 1 AND p.stock > 0 AND pr.verified = 1 ORDER BY p.sold DESC LIMIT 48`).all(),
     actor
-      ? db.prepare(`SELECT * FROM partners WHERE verified = 1 OR id IN (SELECT partner_id FROM partner_users WHERE email = $1) ORDER BY verified DESC, open_now DESC, distance_km ASC`).bind(email).all()
-      : db.prepare(`SELECT * FROM partners WHERE verified = 1 ORDER BY open_now DESC, distance_km ASC`).all(),
+      ? db.prepare(`SELECT * FROM partners WHERE (verified = 1 AND online_only = false) OR id IN (SELECT partner_id FROM partner_users WHERE email = $1) ORDER BY verified DESC, open_now DESC, distance_km ASC`).bind(email).all()
+      : db.prepare(`SELECT * FROM partners WHERE verified = 1 AND online_only = false ORDER BY open_now DESC, distance_km ASC`).all(),
     db.prepare(`SELECT * FROM pets WHERE owner_email = $1 ORDER BY created_at ASC`).bind(email).all(),
     db.prepare(`SELECT a.*, p.name AS pet_name, pr.name AS partner_name FROM appointments a JOIN pets p ON p.id = a.pet_id JOIN partners pr ON pr.id = a.partner_id WHERE a.owner_email = $1 ORDER BY a.scheduled_at DESC`).bind(email).all(),
     db.prepare(`SELECT v.* FROM vaccinations v JOIN pets p ON p.id = v.pet_id WHERE p.owner_email = $1 ORDER BY v.administered_at DESC`).bind(email).all(),
@@ -356,14 +360,33 @@ export async function POST(request: Request) {
       if (!partnerId || lines.some((line) => line.partnerId !== partnerId)) return jsonError("Mỗi đơn hàng hiện chỉ hỗ trợ sản phẩm từ một cửa hàng.", 409);
       const total = lines.reduce((sum, line) => sum + line.total, 0);
       if (!Number.isSafeInteger(total) || total <= 0 || total > 200_000_000) return jsonError("Tổng đơn hàng không hợp lệ.");
+      const method = payload.paymentMethod ?? "transfer";
+      if (!["transfer", "cod"].includes(method)) return jsonError("Phương thức thanh toán không hợp lệ.");
+      const recipientName = safeText(payload.recipientName, 120);
+      const recipientPhone = safeText(payload.recipientPhone, 25);
+      const shippingAddress = safeText(payload.shippingAddress, 500);
+      if (method === "cod") {
+        const shop = await db.prepare("SELECT cod_enabled FROM partners WHERE id=$1").bind(partnerId).first<{cod_enabled:boolean}>();
+        if (!shop?.cod_enabled) return jsonError("Shop chưa hỗ trợ COD.", 409);
+        if (recipientName.length < 2 || !/^(0|\+84)[0-9]{9,10}$/.test(recipientPhone) || shippingAddress.length < 10) return jsonError("Vui lòng nhập đầy đủ tên, số điện thoại và địa chỉ nhận hàng.");
+      }
+      const status = method === "cod" ? "cod_pending" : "pending_payment";
       const id = `order-${crypto.randomUUID()}`;
       const orderCode = `PET${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
-      await db.batch([
-        db.prepare(`INSERT INTO orders (id,order_code,owner_email,partner_id,total_amount,status,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`).bind(id, orderCode, actor.email, partnerId, total, "pending_payment", now, now),
-        ...lines.map((line) => db.prepare(`INSERT INTO order_items (id,order_id,product_id,product_name,unit_price,quantity,line_total) VALUES ($1,$2,$3,$4,$5,$6,$7)`).bind(`item-${crypto.randomUUID()}`, id, line.id, line.name, line.price, line.quantity, line.total)),
+      await db.transaction(async tx => {
+        if (method === "cod") {
+          for (const line of [...lines].sort((a,b)=>a.id.localeCompare(b.id))) {
+            const reserved = await tx.prepare("UPDATE products SET stock=stock-$1 WHERE id=$2 AND stock >= $1 AND active=1").bind(line.quantity,line.id).run();
+            if (reserved.meta.changes !== 1) throw new ConflictError("Sản phẩm vừa hết hàng. Vui lòng cập nhật giỏ.");
+          }
+        }
+        await tx.batch([
+        tx.prepare(`INSERT INTO orders (id,order_code,owner_email,partner_id,total_amount,status,created_at,updated_at,payment_method,recipient_name,recipient_phone,shipping_address) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`).bind(id, orderCode, actor.email, partnerId, total, status, now, now, method, recipientName, recipientPhone, shippingAddress),
+        ...lines.map((line) => tx.prepare(`INSERT INTO order_items (id,order_id,product_id,product_name,unit_price,quantity,line_total) VALUES ($1,$2,$3,$4,$5,$6,$7)`).bind(`item-${crypto.randomUUID()}`, id, line.id, line.name, line.price, line.quantity, line.total)),
       ]);
+      });
       await audit(db, actor.email, "order.create", "order", id);
-      return Response.json({ ok: true, id, orderCode, total, status: "pending_payment" }, { status: 201, headers: PRIVATE_HEADERS });
+      return Response.json({ ok: true, id, orderCode, total, status }, { status: 201, headers: PRIVATE_HEADERS });
     }
 
     if (payload.action === "markOrderPaymentSent") {
@@ -383,11 +406,15 @@ export async function POST(request: Request) {
       const nextStatus = safeText(payload.status, 30);
       const order = await db.prepare(`SELECT partner_id,status FROM orders WHERE id=$1`).bind(orderId).first<{ partner_id: string; status: string }>();
       if (!order || !(await requireRole(db, actor.email, order.partner_id, ["owner", "manager"]))) return jsonError("Bạn không có quyền cập nhật đơn hàng này.", 403);
-      const transitions: Record<string, string[]> = { pending_payment: ["cancelled"], payment_review: ["paid", "cancelled"], paid: ["fulfilled"] };
+      const transitions: Record<string, string[]> = { pending_payment: ["cancelled"], payment_review: ["paid", "cancelled"], paid: ["fulfilled"], cod_pending: ["cod_shipping", "cancelled"], cod_shipping: ["fulfilled", "cancelled"] };
       if (!(transitions[order.status] ?? []).includes(nextStatus)) return jsonError("Chuyển trạng thái đơn hàng không hợp lệ.", 409);
       await db.transaction(async (tx) => {
         const locked = await tx.prepare("SELECT status FROM orders WHERE id=$1 FOR UPDATE").bind(orderId).first<{ status: string }>();
         if (locked?.status !== order.status) throw new ConflictError("Đơn hàng vừa được cập nhật ở phiên khác. Vui lòng tải lại.");
+        if (order.status.startsWith("cod_") && ["cancelled", "fulfilled"].includes(nextStatus)) {
+          const items = await tx.prepare("SELECT product_id,quantity FROM order_items WHERE order_id=$1 ORDER BY product_id").bind(orderId).all<{product_id:string;quantity:number}>();
+          for (const item of items.results) await tx.prepare(nextStatus === "cancelled" ? "UPDATE products SET stock=stock+$1 WHERE id=$2" : "UPDATE products SET sold=sold+$1 WHERE id=$2").bind(item.quantity,item.product_id).run();
+        }
         if (nextStatus === "paid") {
           const items = await tx.prepare("SELECT product_id,quantity FROM order_items WHERE order_id=$1 ORDER BY product_id").bind(orderId).all<{ product_id: string; quantity: number }>();
           if (!items.results.length) throw new ConflictError("Đơn hàng không có sản phẩm.");

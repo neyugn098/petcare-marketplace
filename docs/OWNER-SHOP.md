@@ -1,17 +1,15 @@
-# Hàng chính chủ và lịch sử giao dịch
+# Shop chính chủ và COD
 
-20 SKU nháp (7 kiểu áo minh họa, các size S/M/L) nằm trong `data/owner-drafts.ts`, được hiển thị trước các sản phẩm tham khảo. Giá đề xuất 30.000/50.000/70.000đ, chủ yếu 50.000đ. Đây không phải giá của từng đơn hàng trong chứng từ. Ảnh dùng lại từ danh mục tham khảo Hachiko, không phải ảnh xác nhận hàng tồn của chủ shop. Tất cả có stock=0, active=0 và không được đưa vào thanh toán.
+20 sản phẩm của shop `petcare-owner-shop` nằm trong bảng `products`, dùng ảnh minh họa và giá 30.000–70.000đ. Mở bán giới hạn ban đầu 1 chiếc mỗi mã; cập nhật tồn kho tại trang Đối tác sau khi gắn tài khoản quản lý. File `data/owner-drafts.ts` chỉ giữ mẫu nhập ban đầu, không còn hiển thị bản nháp trong catalog.
 
-Bản lưu database nằm trong `owner_product_drafts`. Thay đổi ở bảng nháp chưa tự cập nhật bản xem trước trong code. Khi có mẫu thực tế, ảnh, giá và tồn kho được xác nhận, chuyển thành sản phẩm trong bảng `products` thuộc đúng shop đã xác minh; không đổi trực tiếp bản nháp thành hàng đang bán.
+Khách đăng nhập, thêm sản phẩm vào giỏ, nhập họ tên/số điện thoại/địa chỉ và chọn Đặt hàng COD. Phí vận chuyển chưa bao gồm; shop phải xác nhận với khách trước khi giao.
 
-`owner_payment_history` lưu các dòng từ ảnh người dùng cung cấp. Ngày chưa biết là NULL; các dòng trùng được loại trước nhập. Không lưu số dư, số tài khoản hoặc ảnh trong Git. Không tạo khách hàng, mã đơn, sản phẩm bán ra hay xác nhận ngân hàng từ những chứng từ này. Đây là sổ ghi chép, không phải lịch sử đơn hàng tự động.
+Đơn COD: `cod_pending` → `cod_shipping` → `fulfilled`. Chỉ chọn hoàn tất sau khi giao và thu đủ tiền. Tồn kho được giữ ngay khi đặt; hủy ở hai bước đầu trả tồn kho đúng một lần. Đã bán chỉ tăng khi hoàn tất. Không tự tích hợp vận chuyển hoặc ngân hàng.
 
-Trang `/owner` chỉ cho phép đúng tài khoản đã được chủ dự án xác nhận và cấu hình bằng `PETCARE_OWNER_EMAIL`. Khi chưa có cấu hình, không ai xem được dữ liệu qua trang này. Có thể xem trực tiếp hai bảng tại Supabase Table Editor bằng tài khoản quản trị dự án. Cả hai bảng bật RLS, không có chính sách truy cập công khai.
+Trang `/partner` yêu cầu quyền owner/manager trong `partner_users`. Không suy đoán chủ tài khoản đăng nhập từ tên người chuyển tiền. Trang `/owner` còn yêu cầu `PETCARE_OWNER_EMAIL`.
 
-## Bật nhận chuyển khoản
+Các khoản tiền vào từ ảnh được đánh dấu `owner_confirmed_sale=true` theo xác nhận của chủ shop. Ngày không rõ giữ trống; không tự gán khách, mặt hàng hoặc đơn hàng cho lịch sử cũ. Khoản tiền ra không phải doanh thu bán hàng. Dữ liệu tài chính giữ riêng trong `owner_payment_history` có RLS.
 
-Sau khi xác nhận đầy đủ thông tin, đặt biến server trên Vercel: `PAYMENT_PARTNER_ID`, `PAYMENT_BANK_NAME`, `PAYMENT_ACCOUNT_NUMBER`, `PAYMENT_ACCOUNT_NAME`. Cấu hình chỉ áp dụng cho shop tương ứng; không áp dụng chung tài khoản nhận tiền cho các shop khác.
+Chuyển khoản vẫn cần PAYMENT_PARTNER_ID, PAYMENT_BANK_NAME, PAYMENT_ACCOUNT_NUMBER, PAYMENT_ACCOUNT_NAME. COD không cần các biến này.
 
-Luồng: giỏ hàng → server tính giá và lưu đơn → hướng dẫn chuyển khoản → khách báo đã chuyển → chủ shop đối soát → đã thanh toán → hoàn tất. Khách có thể mở lại hướng dẫn từ Đơn hàng của tôi. Không có tự đối soát ngân hàng/webhook. QR văn bản và tài khoản mẫu cũ đã được bỏ. Khi chưa đủ cấu hình nhận tiền, không cho báo đã chuyển khoản.
-
-Phí vận chuyển chưa nằm trong tổng hàng hóa; cần xác nhận chính sách giao/nhận trước khi mở bán thật. Chưa xác định tài khoản chủ shop thì không tự cấp quyền cho bất kỳ user nào.
+Migrations: chạy `pnpm db:migrate` trước khi triển khai. Dữ liệu mở bán production được nhập riêng; không tự seed hàng hoặc giao dịch thật vào local.
