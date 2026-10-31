@@ -1,11 +1,24 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
+import { index, integer, real, pgTable, text, uniqueIndex, date, timestamp, check } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   email: text("email").primaryKey(),
   fullName: text("full_name").notNull(),
   createdAt: text("created_at").notNull(),
 });
+
+export const ownerProductDrafts = pgTable("owner_product_drafts", {
+  id: text("id").primaryKey(), name: text("name").notNull(),
+  proposedPrice: integer("proposed_price").notNull(), imageUrl: text("image_url").notNull(),
+  stock: integer("stock").notNull().default(0), status: text("status").notNull().default("draft"),
+  description: text("description").notNull(),
+}, table => [check("owner_product_drafts_proposed_price_check",sql`${table.proposedPrice} > 0`),check("owner_product_drafts_stock_check",sql`${table.stock} >= 0`),check("owner_product_drafts_status_check",sql`${table.status} = 'draft'`)]);
+export const ownerPaymentHistory = pgTable("owner_payment_history", {
+  id: text("id").primaryKey(), amount: integer("amount").notNull(), transactionDate: date("transaction_date"),
+  displayedTime: text("displayed_time").notNull(), description: text("description").notNull(),
+  classification: text("classification").notNull(), sourceReference: text("source_reference").notNull().unique(),
+  verification: text("verification").notNull().default("imported_screenshot"), importedAt: timestamp("imported_at",{withTimezone:true}).notNull().defaultNow(),
+}, table => [check("owner_payment_history_amount_check",sql`${table.amount} <> 0`),check("owner_payment_history_classification_check",sql`${table.classification} IN ('petcare_receipt','unclassified_receipt','outgoing')`),check("owner_payment_history_verification_check",sql`${table.verification} = 'imported_screenshot'`)]);
 
 export const partners = pgTable("partners", {
   id: text("id").primaryKey(),

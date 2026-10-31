@@ -1,4 +1,5 @@
 import type { Database } from "../../../db/client";
+import { paymentDetails } from "../../../lib/payment";
 import { resolveActor, audit, enforceMutationRateLimit, ensureUser, getDatabase, hasPartnerRole, type PartnerRole, validateMutationRequest } from "../../../db/runtime";
 
 export const dynamic = "force-dynamic";
@@ -367,8 +368,9 @@ export async function POST(request: Request) {
 
     if (payload.action === "markOrderPaymentSent") {
       const orderId = safeText(payload.orderId, 100);
-      const order = await db.prepare(`SELECT status FROM orders WHERE id=$1 AND owner_email=$2`).bind(orderId, actor.email).first<{ status: string }>();
+      const order = await db.prepare(`SELECT status,partner_id FROM orders WHERE id=$1 AND owner_email=$2`).bind(orderId, actor.email).first<{ status: string; partner_id: string }>();
       if (!order) return jsonError("Không tìm thấy đơn hàng.", 404);
+      if (!paymentDetails(order.partner_id)) return jsonError("Shop chưa xác nhận tài khoản nhận tiền.", 409);
       if (order.status !== "pending_payment") return jsonError("Đơn hàng không ở trạng thái chờ thanh toán.", 409);
       const updated = await db.prepare(`UPDATE orders SET status='payment_review',updated_at=$1 WHERE id=$2 AND owner_email=$3 AND status='pending_payment'`).bind(now, orderId, actor.email).run();
       if (Number(updated.meta.changes ?? 0) !== 1) return jsonError("Đơn hàng vừa được cập nhật ở phiên khác. Vui lòng tải lại.", 409);

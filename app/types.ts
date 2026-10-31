@@ -1,7 +1,7 @@
 export type Product = {
   id: string; partner_id: string; name: string; category: string; price: number;
   original_price: number | null; visual: string; visual_tone: string; rating: number;
-  is_sample?: boolean; image_url?: string; source_url?: string; price_checked_at?: string; partner_name?: string; partner_address?: string;
+  is_sample?: boolean; is_owner_draft?: boolean; image_url?: string; source_url?: string; price_checked_at?: string; partner_name?: string; partner_address?: string;
   sold: number; stock: number; badge: string | null; description: string; active: number;
 };
 

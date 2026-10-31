@@ -67,6 +67,12 @@ test("PostgreSQL migration and application flows", async (t) => {
     await t.test("payment changes stock once and insufficient inventory rolls back", async () => {
       const order = await post({ action: "createOrder", items: [{ productId: "prod-toy", quantity: 2 }, { productId: "prod-pate", quantity: 1 }] });
       assert.equal(order.status, 201); const { id } = await order.json();
+      delete process.env.PAYMENT_PARTNER_ID;
+      assert.equal((await post({ action: "markOrderPaymentSent", orderId: id })).status, 409);
+      process.env.PAYMENT_PARTNER_ID = "shop-paw-mart";
+      process.env.PAYMENT_BANK_NAME = "Test bank";
+      process.env.PAYMENT_ACCOUNT_NAME = "TEST ONLY";
+      process.env.PAYMENT_ACCOUNT_NUMBER = "123456789";
       assert.equal((await post({ action: "markOrderPaymentSent", orderId: id })).status, 200);
       const before = await db.prepare("SELECT stock FROM products WHERE id='prod-pate'").first<{ stock: number }>();
       await db.prepare("UPDATE products SET stock=0 WHERE id='prod-toy'").run();

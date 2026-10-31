@@ -6,14 +6,6 @@ export const BRAND = {
   supportEmail: "hello@petcare.vn",
 };
 
-// Điểm nối thanh toán: thay bankCode/accountNumber hoặc thay hàm tạo payload
-// bằng API VietQR/cổng thanh toán của bạn. Không đặt khóa bí mật ở file frontend này.
-export const PAYMENT_CONFIG = {
-  bankCode: "MB",
-  accountNumber: "0000 8888 6868",
-  accountName: "CONG TY PETCARE VIET NAM",
-};
-
 export const FALLBACK_DATA: AppData = {
   actor: null,
   requiresSignIn: true,
