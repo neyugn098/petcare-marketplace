@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, real, pgTable, text, uniqueIndex, date, timestamp, check, boolean } from "drizzle-orm/pg-core";
+import { index, integer, real, pgTable, text, uniqueIndex, date, timestamp, check, boolean, time } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   email: text("email").primaryKey(),
@@ -177,3 +177,23 @@ export const orderItems = pgTable("order_items", {
   quantity: integer("quantity").notNull(),
   lineTotal: integer("line_total").notNull(),
 }, (table) => [index("order_item_order_idx").on(table.orderId)]);
+
+export const ownerDemoSalesHistory = pgTable("owner_demo_sales_history", {
+  id: text("id").primaryKey(),
+  isSimulated: boolean("is_simulated").notNull().default(true),
+  transactionDate: date("transaction_date").notNull(),
+  displayedTime: time("displayed_time").notNull(),
+  productName: text("product_name").notNull(),
+  quantity: integer("quantity").notNull(),
+  unitPrice: integer("unit_price").notNull(),
+  amount: integer("amount").notNull(),
+  description: text("description").notNull(),
+  paymentMethod: text("payment_method").notNull(),
+  sourceReference: text("source_reference").notNull().default("SIMULATED — not bank evidence"),
+}, table => [
+  check("owner_demo_sales_history_is_simulated_check", sql`${table.isSimulated} = true`),
+  check("owner_demo_sales_history_quantity_check", sql`${table.quantity} > 0`),
+  check("owner_demo_sales_history_unit_price_check", sql`${table.unitPrice} > 0`),
+  check("owner_demo_sales_history_amount_check", sql`${table.amount} = ${table.quantity} * ${table.unitPrice}`),
+  check("owner_demo_sales_history_payment_method_check", sql`${table.paymentMethod} IN ('cod','transfer')`),
+]);
