@@ -16,4 +16,4 @@ Migrations: chạy `pnpm db:migrate` trước khi triển khai. Dữ liệu mở
 
 ## Lịch sử mô phỏng
 
-Bảng `owner_demo_sales_history` chứa 20 dòng mô phỏng, tách khỏi chứng từ thật. Luôn có `is_simulated=true`, mô tả MÔ PHỎNG, đơn giá × số lượng = số tiền. Không dùng bảng này để tính doanh thu thật, cập nhật tồn kho hoặc xác nhận thanh toán. Dữ liệu mẫu nằm trong `data/demo-sales-history.json`. Ảnh gốc không có trong repo; mã screenshot trong bảng giao dịch thật chỉ là mã tham chiếu, không phải đường dẫn ảnh.
+Bảng `owner_demo_sales_history` chứa 20 dòng mô phỏng, tách khỏi chứng từ thật. Luôn có `is_simulated=true`, tên khách giả lập trong `buyer_name`, mô tả tự nhiên, đơn giá × số lượng = số tiền. Không dùng bảng này để tính doanh thu thật, cập nhật tồn kho hoặc xác nhận thanh toán. Dữ liệu mẫu nằm trong `data/demo-sales-history.json`. Ảnh gốc không có trong repo; mã screenshot trong bảng giao dịch thật chỉ là mã tham chiếu, không phải đường dẫn ảnh.

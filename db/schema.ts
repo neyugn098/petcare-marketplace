@@ -179,6 +179,7 @@ export const orderItems = pgTable("order_items", {
 }, (table) => [index("order_item_order_idx").on(table.orderId)]);
 
 export const ownerDemoSalesHistory = pgTable("owner_demo_sales_history", {
+  buyerName: text("buyer_name"),
   id: text("id").primaryKey(),
   isSimulated: boolean("is_simulated").notNull().default(true),
   transactionDate: date("transaction_date").notNull(),

@@ -8,8 +8,9 @@
     "quantity": 1,
     "unit_price": 30000,
     "amount": 30000,
-    "description": "MÔ PHỎNG: Mua 1 Áo ba lỗ họa tiết cho chó mèo — size S; thanh toán khi nhận hàng.",
-    "payment_method": "cod"
+    "description": "Nguyễn Minh Anh mua 1 Áo ba lỗ họa tiết cho chó mèo — size S, thanh toán khi nhận hàng (COD).",
+    "payment_method": "cod",
+    "buyer_name": "Nguyễn Minh Anh"
   },
   {
     "id": "demo-sale-02",
@@ -20,8 +21,9 @@
     "quantity": 2,
     "unit_price": 50000,
     "amount": 100000,
-    "description": "MÔ PHỎNG: Mua 2 Áo ba lỗ họa tiết cho chó mèo — size M; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Trần Hoàng Nam mua 2 Áo ba lỗ họa tiết cho chó mèo — size M, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Trần Hoàng Nam"
   },
   {
     "id": "demo-sale-03",
@@ -32,8 +34,9 @@
     "quantity": 1,
     "unit_price": 50000,
     "amount": 50000,
-    "description": "MÔ PHỎNG: Mua 1 Áo ba lỗ họa tiết cho chó mèo — size L; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Lê Ngọc Hân mua 1 Áo ba lỗ họa tiết cho chó mèo — size L, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Lê Ngọc Hân"
   },
   {
     "id": "demo-sale-04",
@@ -44,8 +47,9 @@
     "quantity": 3,
     "unit_price": 50000,
     "amount": 150000,
-    "description": "MÔ PHỎNG: Mua 3 Áo ba lỗ vui nhộn cho chó mèo — size S; thanh toán khi nhận hàng.",
-    "payment_method": "cod"
+    "description": "Phạm Gia Bảo mua 3 Áo ba lỗ vui nhộn cho chó mèo — size S, thanh toán khi nhận hàng (COD).",
+    "payment_method": "cod",
+    "buyer_name": "Phạm Gia Bảo"
   },
   {
     "id": "demo-sale-05",
@@ -56,8 +60,9 @@
     "quantity": 1,
     "unit_price": 70000,
     "amount": 70000,
-    "description": "MÔ PHỎNG: Mua 1 Áo ba lỗ vui nhộn cho chó mèo — size M; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Hoàng Thu Hà mua 1 Áo ba lỗ vui nhộn cho chó mèo — size M, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Hoàng Thu Hà"
   },
   {
     "id": "demo-sale-06",
@@ -68,8 +73,9 @@
     "quantity": 2,
     "unit_price": 30000,
     "amount": 60000,
-    "description": "MÔ PHỎNG: Mua 2 Áo ba lỗ vui nhộn cho chó mèo — size L; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Đặng Tuấn Kiệt mua 2 Áo ba lỗ vui nhộn cho chó mèo — size L, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Đặng Tuấn Kiệt"
   },
   {
     "id": "demo-sale-07",
@@ -80,8 +86,9 @@
     "quantity": 2,
     "unit_price": 50000,
     "amount": 100000,
-    "description": "MÔ PHỎNG: Mua 2 Áo lông thú cho chó mèo — size S; thanh toán khi nhận hàng.",
-    "payment_method": "cod"
+    "description": "Bùi Thanh Trúc mua 2 Áo lông thú cho chó mèo — size S, thanh toán khi nhận hàng (COD).",
+    "payment_method": "cod",
+    "buyer_name": "Bùi Thanh Trúc"
   },
   {
     "id": "demo-sale-08",
@@ -92,8 +99,9 @@
     "quantity": 1,
     "unit_price": 50000,
     "amount": 50000,
-    "description": "MÔ PHỎNG: Mua 1 Áo lông thú cho chó mèo — size M; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Đỗ Minh Khang mua 1 Áo lông thú cho chó mèo — size M, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Đỗ Minh Khang"
   },
   {
     "id": "demo-sale-09",
@@ -104,8 +112,9 @@
     "quantity": 3,
     "unit_price": 50000,
     "amount": 150000,
-    "description": "MÔ PHỎNG: Mua 3 Áo lông thú cho chó mèo — size L; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Vũ Phương Linh mua 3 Áo lông thú cho chó mèo — size L, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Vũ Phương Linh"
   },
   {
     "id": "demo-sale-10",
@@ -116,8 +125,9 @@
     "quantity": 1,
     "unit_price": 70000,
     "amount": 70000,
-    "description": "MÔ PHỎNG: Mua 1 Áo len Hipidog cho chó mèo — size S; thanh toán khi nhận hàng.",
-    "payment_method": "cod"
+    "description": "Ngô Hải Đăng mua 1 Áo len Hipidog cho chó mèo — size S, thanh toán khi nhận hàng (COD).",
+    "payment_method": "cod",
+    "buyer_name": "Ngô Hải Đăng"
   },
   {
     "id": "demo-sale-11",
@@ -128,8 +138,9 @@
     "quantity": 1,
     "unit_price": 30000,
     "amount": 30000,
-    "description": "MÔ PHỎNG: Mua 1 Áo len Hipidog cho chó mèo — size M; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Dương Khánh Vy mua 1 Áo len Hipidog cho chó mèo — size M, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Dương Khánh Vy"
   },
   {
     "id": "demo-sale-12",
@@ -140,8 +151,9 @@
     "quantity": 2,
     "unit_price": 50000,
     "amount": 100000,
-    "description": "MÔ PHỎNG: Mua 2 Áo len Hipidog cho chó mèo — size L; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Lý Quốc Bảo mua 2 Áo len Hipidog cho chó mèo — size L, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Lý Quốc Bảo"
   },
   {
     "id": "demo-sale-13",
@@ -152,8 +164,9 @@
     "quantity": 1,
     "unit_price": 50000,
     "amount": 50000,
-    "description": "MÔ PHỎNG: Mua 1 Áo bóng đá cho chó mèo — size S; thanh toán khi nhận hàng.",
-    "payment_method": "cod"
+    "description": "Mai Thảo Nguyên mua 1 Áo bóng đá cho chó mèo — size S, thanh toán khi nhận hàng (COD).",
+    "payment_method": "cod",
+    "buyer_name": "Mai Thảo Nguyên"
   },
   {
     "id": "demo-sale-14",
@@ -164,8 +177,9 @@
     "quantity": 2,
     "unit_price": 50000,
     "amount": 100000,
-    "description": "MÔ PHỎNG: Mua 2 Áo bóng đá cho chó mèo — size M; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Hồ Đức Anh mua 2 Áo bóng đá cho chó mèo — size M, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Hồ Đức Anh"
   },
   {
     "id": "demo-sale-15",
@@ -176,8 +190,9 @@
     "quantity": 3,
     "unit_price": 70000,
     "amount": 210000,
-    "description": "MÔ PHỎNG: Mua 3 Áo bóng đá cho chó mèo — size L; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Phan Bảo Ngọc mua 3 Áo bóng đá cho chó mèo — size L, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Phan Bảo Ngọc"
   },
   {
     "id": "demo-sale-16",
@@ -188,8 +203,9 @@
     "quantity": 1,
     "unit_price": 30000,
     "amount": 30000,
-    "description": "MÔ PHỎNG: Mua 1 Áo dây gấu cho chó mèo — size S; thanh toán khi nhận hàng.",
-    "payment_method": "cod"
+    "description": "Đinh Nhật Minh mua 1 Áo dây gấu cho chó mèo — size S, thanh toán khi nhận hàng (COD).",
+    "payment_method": "cod",
+    "buyer_name": "Đinh Nhật Minh"
   },
   {
     "id": "demo-sale-17",
@@ -200,8 +216,9 @@
     "quantity": 2,
     "unit_price": 50000,
     "amount": 100000,
-    "description": "MÔ PHỎNG: Mua 2 Áo dây gấu cho chó mèo — size M; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Cao Mỹ Duyên mua 2 Áo dây gấu cho chó mèo — size M, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Cao Mỹ Duyên"
   },
   {
     "id": "demo-sale-18",
@@ -212,8 +229,9 @@
     "quantity": 1,
     "unit_price": 50000,
     "amount": 50000,
-    "description": "MÔ PHỎNG: Mua 1 Áo dây gấu cho chó mèo — size L; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Trương Gia Huy mua 1 Áo dây gấu cho chó mèo — size L, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Trương Gia Huy"
   },
   {
     "id": "demo-sale-19",
@@ -224,8 +242,9 @@
     "quantity": 1,
     "unit_price": 50000,
     "amount": 50000,
-    "description": "MÔ PHỎNG: Mua 1 Áo ba lỗ lá bài cho chó mèo — size S; thanh toán khi nhận hàng.",
-    "payment_method": "cod"
+    "description": "Huỳnh Yến Nhi mua 1 Áo ba lỗ lá bài cho chó mèo — size S, thanh toán khi nhận hàng (COD).",
+    "payment_method": "cod",
+    "buyer_name": "Huỳnh Yến Nhi"
   },
   {
     "id": "demo-sale-20",
@@ -236,7 +255,8 @@
     "quantity": 2,
     "unit_price": 70000,
     "amount": 140000,
-    "description": "MÔ PHỎNG: Mua 2 Áo ba lỗ lá bài cho chó mèo — size M; chuyển khoản tiền hàng.",
-    "payment_method": "transfer"
+    "description": "Tạ Anh Khoa mua 2 Áo ba lỗ lá bài cho chó mèo — size M, thanh toán bằng chuyển khoản.",
+    "payment_method": "transfer",
+    "buyer_name": "Tạ Anh Khoa"
   }
 ]
